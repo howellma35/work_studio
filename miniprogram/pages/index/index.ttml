@@ -1,0 +1,25 @@
+<!--首页 - 加入游戏-->
+<view class="container">
+  <view class="hero">
+    <text class="title">猜词大挑战</text>
+    <text class="subtitle">和主播一起猜词，赢取排行榜冠军！</text>
+  </view>
+
+  <view class="user-section">
+    <block tt:if="{{hasAuth && userInfo}}">
+      <view class="user-card">
+        <image class="avatar" src="{{userInfo.avatarUrl}}" mode="aspectFill" />
+        <text class="nickname">{{userInfo.nickName}}</text>
+      </view>
+    </block>
+    <block tt:else>
+      <view class="login-prompt">
+        <text>请先授权登录，才能在排行榜显示你的信息</text>
+      </view>
+    </block>
+  </view>
+
+  <button class="btn-enter" bindtap="handleEnterGame">
+    {{hasAuth ? '进入游戏' : '授权并进入游戏'}}
+  </button>
+</view>

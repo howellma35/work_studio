@@ -1,0 +1,137 @@
+/* 游戏页样式 */
+.game-container {
+  min-height: 100vh;
+  padding: 20rpx 24rpx;
+  background: linear-gradient(180deg, #0f0f23 0%, #1a1a3e 100%);
+}
+
+/* 等待状态 */
+.waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 0;
+}
+.waiting-icon { font-size: 80rpx; margin-bottom: 24rpx; }
+.waiting-text { font-size: 30rpx; color: #a0a0cc; }
+
+/* 活跃游戏 */
+.hint-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 20rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+.hint-label { display: block; font-size: 24rpx; color: #a0a0cc; margin-bottom: 8rpx; }
+.hint-text { font-size: 32rpx; font-weight: 600; color: #ffffff; }
+
+.countdown-badge {
+  background: #4ecdc4;
+  color: #000;
+  padding: 8rpx 20rpx;
+  border-radius: 30rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+.countdown-badge.urgent { background: #ff4757; color: #fff; }
+
+/* 输入区 */
+.input-section {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+.guess-input {
+  flex: 1;
+  height: 88rpx;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16rpx;
+  padding: 0 24rpx;
+  color: #fff;
+  font-size: 30rpx;
+}
+.btn-guess {
+  width: 140rpx !important;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: linear-gradient(135deg, #ff6b6b, #ff8e53) !important;
+  color: white !important;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 16rpx !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.btn-guess[disabled] { opacity: 0.5; }
+
+/* 猜测结果 */
+.guess-result {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 20rpx;
+}
+.guess-result.correct {
+  background: rgba(78, 205, 196, 0.15);
+  border: 2rpx solid rgba(78, 205, 196, 0.4);
+}
+.result-message { display: block; font-size: 28rpx; color: #fff; margin-bottom: 4rpx; }
+.result-rank { font-size: 24rpx; color: #a0a0cc; }
+
+/* 答案揭晓 */
+.answer-card {
+  text-align: center;
+  background: rgba(255, 215, 0, 0.1);
+  border: 2rpx solid rgba(255, 215, 0, 0.3);
+  border-radius: 20rpx;
+  padding: 40rpx;
+  margin-bottom: 24rpx;
+}
+.answer-label { display: block; font-size: 24rpx; color: #a0a0cc; margin-bottom: 12rpx; }
+.answer-value { font-size: 48rpx; font-weight: 800; color: #ffd700; }
+
+/* 排行榜 */
+.leaderboard-section {
+  margin-top: 20rpx;
+}
+.lb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+.lb-title { font-size: 32rpx; font-weight: 700; color: #fff; }
+.lb-count { font-size: 24rpx; color: #a0a0cc; }
+
+.lb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+.lb-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12rpx;
+}
+.lb-item.top-0 { background: rgba(255, 215, 0, 0.12); }
+.lb-item.top-1 { background: rgba(192, 192, 192, 0.1); }
+.lb-item.top-2 { background: rgba(205, 127, 50, 0.1); }
+
+.lb-rank {
+  width: 52rpx;
+  text-align: center;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #a0a0cc;
+}
+.lb-info { flex: 1; }
+.lb-name { display: block; font-size: 26rpx; font-weight: 600; color: #fff; }
+.lb-guess { display: block; font-size: 22rpx; color: #a0a0cc; }
+.lb-score { font-size: 28rpx; font-weight: 700; color: #4ecdc4; }

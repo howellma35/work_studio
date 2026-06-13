@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # 后端服务
+  server:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: raggame-server
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_PATH=/app/data/raggame.db
+    env_file:
+      - ../server/.env
+    volumes:
+      - server-data:/app/data
+    depends_on:
+      - redis
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: raggame-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  # Nginx 反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: raggame-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - web-dist:/usr/share/nginx/html:ro
+    depends_on:
+      - server
+
+volumes:
+  server-data:
+  redis-data:
+  web-dist:
