@@ -99,7 +99,8 @@ export function setupWebSocket(io: SocketServer): void {
  */
 async function handleGuess(io: SocketServer, client: ConnectedClient, data: Record<string, unknown>): Promise<void> {
   const roundId = data.roundId as number;
-  const text = (data.text as string || '').trim();
+  // 兼容 text 和 guessText 两种字段名
+  const text = ((data.text || data.guessText) as string || '').trim();
 
   if (!text) {
     client.socket.emit('message', { type: 'error', data: { message: '请输入猜测内容' } });

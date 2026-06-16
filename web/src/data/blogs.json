@@ -1,0 +1,29 @@
+[
+  {
+    "slug": "docker-multi-stage-build",
+    "title": "Docker 多阶段构建优化前端部署实践",
+    "summary": "深入探讨如何利用 Docker 多阶段构建将前端镜像从 1.2GB 压缩到 25MB，同时保证构建速度和安全性。",
+    "tags": ["Docker", "DevOps", "前端"],
+    "date": "2026-06-10",
+    "readTime": "8 分钟",
+    "content": "## 引言\n\n在前端项目部署中，Docker 镜像体积直接影响部署速度和资源消耗。本文将介绍如何通过多阶段构建（Multi-stage Build）将镜像体积压缩 98%。\n\n## 传统方案的痛点\n\n传统做法通常将整个 Node.js 环境打包进最终镜像：\n\n```dockerfile\nFROM node:20\nWORKDIR /app\nCOPY . .\nRUN npm install && npm run build\nEXPOSE 3000\nCMD [\"npm\", \"start\"]\n```\n\n这样产生的镜像通常超过 **1GB**，因为包含了完整的 Node.js 运行时和所有开发依赖。\n\n## 多阶段构建方案\n\n```dockerfile\n# Stage 1: 构建阶段\nFROM node:20-alpine AS builder\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\n\n# Stage 2: 生产阶段（仅 Nginx）\nFROM nginx:alpine\nCOPY --from=builder /app/dist /usr/share/nginx/html\nEXPOSE 80\nCMD [\"nginx\", \"-g\", \"daemon off;\"]\n```\n\n最终镜像仅包含 Nginx + 静态文件，体积约 **25MB**。\n\n## 进阶优化\n\n1. **利用构建缓存**：将 `package.json` 单独 COPY，避免代码变更触发依赖重装\n2. **安全扫描**：使用 `docker scout` 检查镜像漏洞\n3. **Nginx 配置优化**：启用 gzip、配置缓存策略\n\n## 总结\n\n多阶段构建是前端 Docker 部署的必选方案，在保证构建完整性的同时大幅减小镜像体积。"
+  },
+  {
+    "slug": "rag-architecture-design",
+    "title": "RAG 检索增强生成架构设计指南",
+    "summary": "从零设计一个生产级 RAG 系统，涵盖文档切分、向量存储、检索策略和 Prompt 工程。",
+    "tags": ["AI", "RAG", "架构"],
+    "date": "2026-05-28",
+    "readTime": "12 分钟",
+    "content": "## 什么是 RAG？\n\nRAG（Retrieval-Augmented Generation）是一种将外部知识库与大语言模型结合的技术方案。通过先检索相关文档片段，再将其作为上下文注入 Prompt，可以显著提升回答的准确性和时效性。\n\n## 核心架构\n\n### 1. 文档处理管道\n\n```\n原始文档 → 解析提取 → 文本切分 → 向量化 → 存入向量数据库\n```\n\n- **解析提取**：使用 pdfplumber (PDF)、python-docx (Word) 等库\n- **文本切分**：按段落/固定长度/语义边界切分，推荐 chunk_size=512, overlap=50\n- **向量化**：调用 Embedding API (如 OpenAI text-embedding-3, 通义千问 text-embedding-v3)\n\n### 2. 检索策略\n\n- **语义检索**：基于向量余弦相似度\n- **混合检索**：结合 BM25 关键词检索 + 语义检索\n- **重排序**：使用 Cross-Encoder 对初步检索结果进行重排\n\n### 3. Prompt 工程\n\n```python\nprompt = f\"\"\"\n基于以下参考资料回答用户问题。\n如果资料中没有相关信息，请明确说明。\n\n参考资料：\n{context}\n\n用户问题：{question}\n\"\"\"\n```\n\n## 最佳实践\n\n- 使用 metadata 过滤（如按文档来源筛选）\n- 实现流式响应提升用户体验\n- 建立评估体系（Faithfulness、Relevance 指标）"
+  },
+  {
+    "slug": "typescript-utility-types",
+    "title": "TypeScript 高级类型体操实用技巧",
+    "summary": "深入理解 TypeScript 的条件类型、映射类型和模板字面量类型，用实际案例展示类型体操的威力。",
+    "tags": ["TypeScript", "前端", "类型系统"],
+    "date": "2026-05-15",
+    "readTime": "10 分钟",
+    "content": "## 为什么需要类型体操？\n\nTypeScript 的类型系统是图灵完备的，这意味着我们可以在类型层面做很多强大的事情。掌握高级类型技巧可以让代码更安全、更优雅。\n\n## 条件类型\n\n```typescript\ntype IsString<T> = T extends string ? true : false;\n\ntype A = IsString<'hello'>; // true\ntype B = IsString<42>;      // false\n```\n\n## 映射类型\n\n```typescript\ntype Readonly<T> = {\n  readonly [K in keyof T]: T[K];\n};\n\ntype Optional<T> = {\n  [K in keyof T]?: T[K];\n};\n```\n\n## 实用工具类型\n\n### DeepPartial\n\n```typescript\ntype DeepPartial<T> = {\n  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];\n};\n```\n\n### 提取 Promise 返回值\n\n```typescript\ntype UnwrapPromise<T> = T extends Promise<infer U> ? U : T;\n\ntype Result = UnwrapPromise<Promise<string>>; // string\n```\n\n## 总结\n\n类型体操虽然有一定学习曲线，但掌握后能极大提升代码的类型安全性和可维护性。"
+  }
+]

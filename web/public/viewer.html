@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>猜词挑战 - 观众端</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .status {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .status.connected { color: #10b981; }
+    .status.disconnected { color: #ef4444; }
+    .game-info {
+      background: #f3f4f6;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+    }
+    .game-info h2 {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .hint {
+      font-size: 24px;
+      color: #667eea;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .timer {
+      font-size: 32px;
+      color: #ef4444;
+      font-weight: bold;
+      text-align: center;
+      margin: 20px 0;
+    }
+    .input-group {
+      margin-bottom: 20px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 15px 20px;
+      font-size: 18px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      outline: none;
+      transition: all 0.3s;
+    }
+    input[type="text"]:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    button {
+      width: 100%;
+      padding: 15px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 12px;
+      text-align: center;
+      font-size: 16px;
+    }
+    .result.success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .result.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .waiting {
+      text-align: center;
+      color: #9ca3af;
+      font-size: 18px;
+      padding: 40px 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 猜词挑战</h1>
+    <div id="status" class="status disconnected">● 未连接</div>
+    
+    <div id="gameArea">
+      <div class="waiting">等待主播开始游戏...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { io } from 'https://cdn.socket.io/4.7.2/socket.io.esm.min.js';
+
+    const statusEl = document.getElementById('status');
+    const gameAreaEl = document.getElementById('gameArea');
+    let socket = null;
+    let currentRoundId = null;
+
+    // 连接 WebSocket
+    function connect() {
+      socket = io('/', {
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        statusEl.textContent = '● 已连接';
+        statusEl.className = 'status connected';
+        
+        // 以观众身份注册
+        const userId = 'viewer_' + Math.random().toString(36).substr(2, 9);
+        const username = '观众' + Math.floor(Math.random() * 1000);
+        
+        socket.emit('register', {
+          userId,
+          username,
+          avatar: '',
+          role: 'viewer',
+        });
+      });
+
+      socket.on('disconnect', () => {
+        statusEl.textContent = '● 未连接';
+        statusEl.className = 'status disconnected';
+      });
+
+      socket.on('message', (msg) => {
+        handleMessage(msg);
+      });
+    }
+
+    function handleMessage(msg) {
+      console.log('收到消息:', msg);
+      
+      switch (msg.type) {
+        case 'new_round':
+          showGameScreen(msg.data);
+          break;
+        case 'round_end':
+          showRoundEnd(msg.data);
+          break;
+        case 'guess_result':
+          showGuessResult(msg.data);
+          break;
+      }
+    }
+
+    function showGameScreen(data) {
+      currentRoundId = data.roundId;
+      
+      gameAreaEl.innerHTML = `
+        <div class="game-info">
+          <h2>本轮提示</h2>
+          <div class="hint">${data.hint}</div>
+          <div class="timer" id="timer">${data.duration}秒</div>
+        </div>
+        
+        <div class="input-group">
+          <input type="text" id="guessInput" placeholder="输入你猜的词..." autofocus />
+        </div>
+        
+        <button id="submitBtn">提交猜测</button>
+        
+        <div id="result"></div>
+      `;
+
+      // 启动倒计时
+      let remaining = data.duration;
+      const timerEl = document.getElementById('timer');
+      const countdown = setInterval(() => {
+        remaining--;
+        timerEl.textContent = remaining + '秒';
+        if (remaining <= 0) clearInterval(countdown);
+      }, 1000);
+
+      // 点击按钮提交
+      document.getElementById('submitBtn').addEventListener('click', submitGuess);
+      // 回车提交
+      document.getElementById('guessInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') submitGuess();
+      });
+    }
+
+    function submitGuess() {
+      const input = document.getElementById('guessInput');
+      const guessText = input.value.trim();
+      
+      if (!guessText) {
+        alert('请输入你猜的词！');
+        return;
+      }
+
+      if (!currentRoundId) {
+        alert('当前没有进行中的游戏！');
+        return;
+      }
+
+      // 发送猜测
+      socket.emit('message', {
+        type: 'guess',  // 后端期望的类型
+        data: {
+          roundId: currentRoundId,
+          text: guessText,  // 后端期望的字段名
+        },
+      });
+
+      // 禁用输入
+      input.disabled = true;
+      document.getElementById('submitBtn').disabled = true;
+      
+      // 显示等待
+      document.getElementById('result').innerHTML = '<div class="result">⏳ 正在计算相似度...</div>';
+    }
+
+    function showGuessResult(data) {
+      const resultEl = document.getElementById('result');
+      
+      // 重新启用输入框和按钮，允许继续提交
+      const input = document.getElementById('guessInput');
+      const btn = document.getElementById('submitBtn');
+      if (input) { input.disabled = false; input.value = ''; input.focus(); }
+      if (btn) btn.disabled = false;
+
+      if (data.success) {
+        resultEl.innerHTML = `
+          <div class="result success">
+            ✅ 猜测成功！<br/>
+            相似度: ${data.similarity.toFixed(2)}%<br/>
+            当前排名: 第 ${data.rank} 名
+          </div>
+        `;
+      } else {
+        resultEl.innerHTML = `
+          <div class="result error">
+            ❌ ${data.message || '猜测失败'}
+          </div>
+        `;
+      }
+    }
+
+    function showRoundEnd(data) {
+      gameAreaEl.innerHTML = `
+        <div class="game-info">
+          <h2>本轮结束</h2>
+          <div class="hint">正确答案: ${data.answer}</div>
+          <p style="margin-top: 10px; color: #666;">
+            参与人数: ${data.totalParticipants}<br/>
+            等待下一轮...
+          </p>
+        </div>
+      `;
+      currentRoundId = null;
+    }
+
+    // 启动连接
+    connect();
+  </script>
+</body>
+</html>

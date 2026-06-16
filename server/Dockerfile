@@ -10,8 +10,8 @@ RUN npm ci --production=false
 COPY . .
 RUN npm run build
 
-# 创建数据目录
-RUN mkdir -p /app/data
+# 创建数据目录和日志目录
+RUN mkdir -p /app/data /app/logs
 
 # 只保留生产依赖
 RUN npm prune --production

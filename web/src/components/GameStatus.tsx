@@ -1,7 +1,3 @@
-/**
- * 游戏状态组件
- * 显示当前游戏状态、提示、倒计时、主播控制面板
- */
 import { useState } from 'react';
 import type { GameState } from '../hooks/useWebSocket';
 
@@ -33,6 +29,8 @@ const DIFFICULTIES = [
   { value: 3, label: '较难' },
 ];
 
+const selectClass = "flex-1 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-[var(--color-text-primary)] text-sm outline-none focus:border-[var(--color-accent)]/50";
+
 export default function GameStatus({
   gameState,
   connected,
@@ -41,7 +39,7 @@ export default function GameStatus({
 }: GameStatusProps) {
   const [category, setCategory] = useState('');
   const [difficulty, setDifficulty] = useState(0);
-  const [duration, setDuration] = useState(60);
+  const [duration, setDuration] = useState(7200);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -50,52 +48,41 @@ export default function GameStatus({
   };
 
   return (
-    <div className="game-status">
-      {/* 连接状态 */}
-      <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
-        <span className="dot" />
-        {connected ? '已连接' : '未连接'}
-      </div>
-
-      {/* 游戏状态 */}
+    <div>
       {gameState.status === 'idle' && (
-        <div className="idle-panel">
-          <h1>猜词直播间</h1>
-          <p>点击下方按钮开始新一轮游戏</p>
+        <div>
+          <h2 className="text-xl font-bold mb-1">猜词直播间</h2>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-5">点击下方按钮开始新一轮游戏</p>
 
-          <div className="control-panel">
-            <div className="control-row">
-              <label>分类:</label>
-              <select value={category} onChange={e => setCategory(e.target.value)}>
-                {CATEGORIES.map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <label className="w-12 text-sm text-[var(--color-text-secondary)]">分类:</label>
+              <select className={selectClass} value={category} onChange={e => setCategory(e.target.value)}>
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
-            <div className="control-row">
-              <label>难度:</label>
-              <select value={difficulty} onChange={e => setDifficulty(Number(e.target.value))}>
-                {DIFFICULTIES.map(d => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
+            <div className="flex items-center gap-3">
+              <label className="w-12 text-sm text-[var(--color-text-secondary)]">难度:</label>
+              <select className={selectClass} value={difficulty} onChange={e => setDifficulty(Number(e.target.value))}>
+                {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
-            <div className="control-row">
-              <label>时长:</label>
-              <select value={duration} onChange={e => setDuration(Number(e.target.value))}>
-                <option value={30}>30秒</option>
-                <option value={60}>60秒</option>
-                <option value={90}>90秒</option>
-                <option value={120}>120秒</option>
+            <div className="flex items-center gap-3">
+              <label className="w-12 text-sm text-[var(--color-text-secondary)]">时长:</label>
+              <select className={selectClass} value={duration} onChange={e => setDuration(Number(e.target.value))}>
+                <option value={60}>1分钟</option>
+                <option value={180}>3分钟</option>
+                <option value={300}>5分钟</option>
+                <option value={600}>10分钟</option>
+                <option value={900}>15分钟</option>
+                <option value={1800}>30分钟</option>
+                <option value={3600}>1小时</option>
+                <option value={7200}>2小时</option>
               </select>
             </div>
             <button
-              className="btn-start"
-              onClick={() => onStartRound({
-                category: category || undefined,
-                difficulty: difficulty || undefined,
-                duration,
-              })}
+              className="btn-primary mt-3 text-base py-3"
+              onClick={() => onStartRound({ category: category || undefined, difficulty: difficulty || undefined, duration })}
               disabled={!connected}
             >
               开始新一轮
@@ -105,33 +92,27 @@ export default function GameStatus({
       )}
 
       {gameState.status === 'active' && (
-        <div className="active-panel">
-          <div className="hint-display">
-            <span className="hint-label">提示:</span>
-            <span className="hint-text">{gameState.hint}</span>
+        <div>
+          <div className="mb-4">
+            <span className="text-sm text-[var(--color-text-secondary)]">提示:</span>
+            <p className="text-xl font-semibold mt-1">{gameState.hint}</p>
           </div>
-          <div className={`countdown ${gameState.remainingSeconds <= 10 ? 'urgent' : ''}`}>
+          <div className={`game-countdown ${gameState.remainingSeconds <= 10 ? 'urgent' : ''}`}>
             {formatTime(gameState.remainingSeconds)}
           </div>
-          <button className="btn-end" onClick={onEndRound}>
+          <button className="btn-ghost w-full mt-3" onClick={onEndRound}>
             提前结束
           </button>
         </div>
       )}
 
       {gameState.status === 'finished' && (
-        <div className="finished-panel">
-          <div className="answer-reveal">
-            <span className="answer-label">答案揭晓:</span>
-            <span className="answer-text">{gameState.lastAnswer}</span>
-          </div>
+        <div className="text-center">
+          <p className="text-sm text-[var(--color-text-secondary)] mb-2">答案揭晓:</p>
+          <p className="text-3xl font-extrabold text-[var(--color-gold)] mb-6">{gameState.lastAnswer}</p>
           <button
-            className="btn-start"
-            onClick={() => onStartRound({
-              category: category || undefined,
-              difficulty: difficulty || undefined,
-              duration,
-            })}
+            className="btn-primary text-base py-3 w-full"
+            onClick={() => onStartRound({ category: category || undefined, difficulty: difficulty || undefined, duration })}
             disabled={!connected}
           >
             再来一轮

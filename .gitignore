@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project specific
+ai-server/logs/
+game-server/logs/
+game-server/data/guesses.json
+server/logs/
+web/.env.local
+node_modules/
+.venv/
+venv/
