@@ -31,12 +31,9 @@ export default function PdfParser() {
 
     setError('');
     setStatus('uploading');
-
-    // Create preview URL
     const url = URL.createObjectURL(file);
     setFilePreviewUrl(url);
 
-    // Upload and parse
     setStatus('parsing');
     try {
       const formData = new FormData();
@@ -65,7 +62,7 @@ export default function PdfParser() {
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1,
-    maxSize: 50 * 1024 * 1024, // 50MB
+    maxSize: 50 * 1024 * 1024,
   });
 
   const handleExport = () => {
@@ -102,45 +99,41 @@ export default function PdfParser() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:py-14">
       <Link
         to="/tools"
-        className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent-light)] mb-8 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] mb-6 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" /> 返回工具列表
       </Link>
 
       <div className="mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold mb-3 bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-          PDF 解析工具
-        </h1>
-        <p className="text-[var(--color-text-secondary)]">上传 PDF 文件，提取文本内容，支持多格式导出</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-text)] mb-2">PDF 解析工具</h1>
+        <p className="text-[var(--color-text-secondary)] text-sm">上传 PDF 文件，提取文本内容，支持多格式导出</p>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-5">
         {/* Left: Upload + Preview */}
         <div className="flex flex-col gap-4">
-          {/* Drop Zone */}
           <div
             {...getRootProps()}
-            className={`glass-card p-8 text-center cursor-pointer transition-all border-2 border-dashed
-              ${isDragActive ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/5' : 'border-white/10 hover:border-white/20'}`}
+            className={`card p-6 text-center cursor-pointer transition-all border-2 border-dashed
+              ${isDragActive ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]' : 'border-[var(--color-border)] hover:border-[var(--color-accent)]'}`}
           >
             <input {...getInputProps()} />
-            <Upload className={`h-12 w-12 mx-auto mb-4 ${isDragActive ? 'text-[var(--color-accent-light)]' : 'text-[var(--color-text-secondary)]'}`} />
+            <Upload className={`h-10 w-10 mx-auto mb-3 ${isDragActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}`} />
             {isDragActive ? (
-              <p className="text-[var(--color-accent-light)] font-medium">松开以上传文件</p>
+              <p className="text-[var(--color-accent)] font-medium">松开以上传文件</p>
             ) : (
               <>
-                <p className="text-[var(--color-text-primary)] font-medium mb-1">拖拽 PDF 文件到此处</p>
+                <p className="text-[var(--color-text)] font-medium mb-1">拖拽 PDF 文件到此处</p>
                 <p className="text-sm text-[var(--color-text-secondary)]">或点击选择文件（最大 50MB）</p>
               </>
             )}
           </div>
 
-          {/* Preview */}
           {filePreviewUrl && (
-            <div className="glass-card flex-1 min-h-[300px] overflow-hidden">
+            <div className="card flex-1 min-h-[300px] overflow-hidden">
               <iframe
                 src={filePreviewUrl}
                 className="w-full h-full min-h-[400px]"
@@ -152,17 +145,16 @@ export default function PdfParser() {
 
         {/* Right: Results */}
         <div className="flex flex-col gap-4">
-          {/* Status */}
           {status === 'parsing' && (
-            <div className="glass-card p-6 flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent-light)]" />
+            <div className="card p-5 flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent)]" />
               <span className="text-[var(--color-text-secondary)]">正在解析文件...</span>
             </div>
           )}
 
           {status === 'error' && (
-            <div className="glass-card p-6 flex items-start gap-3 border border-[var(--color-danger)]/30">
-              <AlertCircle className="h-5 w-5 text-[var(--color-danger)] flex-shrink-0 mt-0.5" />
+            <div className="card p-5 flex items-start gap-3 border-[var(--color-danger)]">
+              <AlertCircle className="h-5 w-5 text-[var(--color-danger)] shrink-0 mt-0.5" />
               <div>
                 <p className="text-[var(--color-danger)] font-medium">解析失败</p>
                 <p className="text-sm text-[var(--color-text-secondary)] mt-1">{error}</p>
@@ -172,42 +164,39 @@ export default function PdfParser() {
 
           {status === 'done' && result && (
             <>
-              {/* Info */}
-              <div className="glass-card p-4 flex items-center gap-3">
+              <div className="card p-4 flex items-center gap-3">
                 <Check className="h-5 w-5 text-[var(--color-success)]" />
                 <div>
-                  <p className="font-medium">{result.fileName}</p>
-                  <p className="text-sm text-[var(--color-text-secondary)]">共 {result.pages} 页</p>
+                  <p className="font-medium text-sm">{result.fileName}</p>
+                  <p className="text-xs text-[var(--color-text-secondary)]">共 {result.pages} 页</p>
                 </div>
               </div>
 
-              {/* Export Controls */}
               <div className="flex items-center gap-3">
-                <div className="flex gap-1 bg-white/5 rounded-lg p-1 border border-white/10">
+                <div className="flex gap-0.5 bg-[var(--color-bg-muted)] rounded-lg p-0.5">
                   {(['txt', 'md', 'json'] as ExportFormat[]).map((fmt) => (
                     <button
                       key={fmt}
                       onClick={() => setExportFormat(fmt)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all
-                        ${exportFormat === fmt ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors
+                        ${exportFormat === fmt ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}`}
                     >
                       {fmt.toUpperCase()}
                     </button>
                   ))}
                 </div>
-                <button onClick={handleExport} className="btn-primary flex items-center gap-2 text-sm px-4 py-2">
+                <button onClick={handleExport} className="btn-primary text-sm !py-1.5 !px-4">
                   <Download className="h-4 w-4" />
                   导出文件
                 </button>
               </div>
 
-              {/* Text Content */}
-              <div className="glass-card p-4 flex-1 min-h-[300px] overflow-auto">
+              <div className="card p-4 flex-1 min-h-[300px] overflow-auto">
                 <div className="flex items-center gap-2 mb-3 text-sm text-[var(--color-text-secondary)]">
                   <FileText className="h-4 w-4" />
                   提取内容
                 </div>
-                <pre className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap leading-relaxed font-sans">
+                <pre className="text-sm text-[var(--color-text)] whitespace-pre-wrap leading-relaxed font-sans">
                   {result.text}
                 </pre>
               </div>
@@ -215,9 +204,9 @@ export default function PdfParser() {
           )}
 
           {status === 'idle' && (
-            <div className="glass-card p-8 flex flex-col items-center justify-center text-center flex-1 min-h-[300px]">
-              <FileText className="h-16 w-16 text-[var(--color-text-secondary)] opacity-20 mb-4" />
-              <p className="text-[var(--color-text-secondary)]">上传 PDF 文件后，解析结果将显示在这里</p>
+            <div className="card p-6 flex flex-col items-center justify-center text-center flex-1 min-h-[300px]">
+              <FileText className="h-12 w-12 text-[var(--color-text-muted)] opacity-30 mb-3" />
+              <p className="text-sm text-[var(--color-text-muted)]">上传 PDF 文件后，解析结果将显示在这里</p>
             </div>
           )}
         </div>

@@ -3,47 +3,38 @@ import { siteConfig } from '../config/site';
 
 export default function Footer() {
   return (
-    <footer className="flex-shrink-0 border-t border-white/10 bg-[#0a0a1a]/90 backdrop-blur-sm">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 mb-5 text-sm">
-          <div>
-            <h4 className="font-semibold text-[var(--color-text-primary)] mb-2 text-xs uppercase tracking-wider">平台</h4>
-            <ul className="space-y-1.5 text-[var(--color-text-secondary)]">
-              <li><Link to="/blog" className="hover:text-[var(--color-accent-light)] transition-colors">技术博客</Link></li>
-              <li><Link to="/ai" className="hover:text-[var(--color-accent-light)] transition-colors">AI前沿探索</Link></li>
-              <li><Link to="/tools" className="hover:text-[var(--color-accent-light)] transition-colors">日常小工具</Link></li>
-              <li><Link to="/games" className="hover:text-[var(--color-accent-light)] transition-colors">小游戏</Link></li>
-            </ul>
+    <footer className="border-t border-[var(--color-border)] bg-[var(--color-bg-soft)] mt-auto">
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+          {/* 左侧：品牌 */}
+          <div className="shrink-0">
+            <p className="font-semibold text-sm text-[var(--color-text)]">{siteConfig.organization_name}</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1">{siteConfig.contact_email}</p>
           </div>
-          <div>
-            <h4 className="font-semibold text-[var(--color-text-primary)] mb-2 text-xs uppercase tracking-wider">法律</h4>
-            <ul className="space-y-1.5 text-[var(--color-text-secondary)]">
-              <li><Link to="/privacy" className="hover:text-[var(--color-accent-light)] transition-colors">隐私政策</Link></li>
-              <li><Link to="/terms" className="hover:text-[var(--color-accent-light)] transition-colors">服务条款</Link></li>
-              <li><Link to="/open-source" className="hover:text-[var(--color-accent-light)] transition-colors">开源声明</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-[var(--color-text-primary)] mb-2 text-xs uppercase tracking-wider">联系</h4>
-            <a href={`mailto:${siteConfig.contact_email}`} className="text-[var(--color-text-secondary)] hover:text-[var(--color-accent-light)] transition-colors break-all text-xs">
-              {siteConfig.contact_email}
-            </a>
-          </div>
-          <div>
-            <h4 className="font-semibold text-[var(--color-text-primary)] mb-2 text-xs uppercase tracking-wider">运营方</h4>
-            <p className="text-[var(--color-text-secondary)] text-xs">{siteConfig.organization_name}</p>
+
+          {/* 中间：链接 */}
+          <div className="flex gap-8 text-xs text-[var(--color-text-secondary)]">
+            <div className="flex flex-col gap-1.5">
+              <Link to="/blog" className="hover:text-[var(--color-accent)]">博客</Link>
+              <Link to="/ai" className="hover:text-[var(--color-accent)]">AI 对话</Link>
+              <Link to="/tools" className="hover:text-[var(--color-accent)]">工具</Link>
+              <Link to="/games" className="hover:text-[var(--color-accent)]">游戏</Link>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Link to="/privacy" className="hover:text-[var(--color-accent)]">隐私政策</Link>
+              <Link to="/terms" className="hover:text-[var(--color-accent)]">服务条款</Link>
+              <Link to="/open-source" className="hover:text-[var(--color-accent)]">开源声明</Link>
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-xs text-[var(--color-text-secondary)]">
-            &copy; {new Date().getFullYear()} {siteConfig.organization_name}. All rights reserved.
-          </p>
+        <div className="mt-8 pt-4 border-t border-[var(--color-border)] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[var(--color-text-muted)]">
+          <p>&copy; {new Date().getFullYear()} {siteConfig.organization_name}. All rights reserved.</p>
           <a
             href="https://beian.miit.gov.cn/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-accent-light)] transition-colors"
+            className="hover:text-[var(--color-accent)] transition-colors"
           >
             {siteConfig.icp_number}
           </a>

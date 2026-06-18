@@ -1,93 +1,59 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-/* === 设计系统：暗色玻璃拟态 === */
+/* === 简约设计系统 === */
 @theme {
-  --color-bg-primary: #0a0a1a;
-  --color-bg-secondary: #12122b;
-  --color-bg-card: rgba(30, 30, 70, 0.6);
-  --color-bg-glass: rgba(255, 255, 255, 0.05);
-  --color-border-glass: rgba(255, 255, 255, 0.1);
-  --color-text-primary: #f0f0ff;
-  --color-text-secondary: #8888bb;
-  --color-accent: #6c5ce7;
-  --color-accent-light: #a29bfe;
-  --color-accent-glow: rgba(108, 92, 231, 0.3);
-  --color-success: #00cec9;
-  --color-warning: #fdcb6e;
-  --color-danger: #ff7675;
-  --color-gold: #ffd700;
-  --color-silver: #c0c0c0;
-  --color-bronze: #cd7f32;
+  --color-bg: #ffffff;
+  --color-bg-soft: #f8f9fa;
+  --color-bg-muted: #f1f3f5;
+  --color-border: #e9ecef;
+  --color-border-light: #f1f3f5;
+  --color-text: #1a1a2e;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+  --color-accent: #4f46e5;
+  --color-accent-light: #6366f1;
+  --color-accent-soft: #eef2ff;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-gold: #f59e0b;
+  --color-silver: #9ca3af;
+  --color-bronze: #d97706;
 }
 
 /* === 全局基础 === */
-*, *::before, *::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 html {
-  height: 100%;
-  overflow: hidden;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  height: 100%;
-  overflow: hidden;
-}
-
-/* 背景装饰光晕 */
-body::before {
-  content: '';
-  position: fixed;
-  top: -30%;
-  left: -10%;
-  width: 60%;
-  height: 60%;
-  background: radial-gradient(circle, rgba(108, 92, 231, 0.12) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  bottom: -20%;
-  right: -10%;
-  width: 50%;
-  height: 50%;
-  background: radial-gradient(circle, rgba(0, 206, 201, 0.08) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
-  position: relative;
-  z-index: 1;
-  height: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-/* === 玻璃拟态卡片 === */
-.glass-card {
-  background: var(--color-bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-border-glass);
-  border-radius: 16px;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+/* === 简约卡片 === */
+.card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
 
-.glass-card-hover:hover {
-  border-color: rgba(108, 92, 231, 0.4);
-  box-shadow: 0 0 24px var(--color-accent-glow);
-  transform: translateY(-2px);
+.card-hover:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 /* === 按钮 === */
@@ -95,20 +61,21 @@ body::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-accent), #a29bfe);
-  color: white;
+  gap: 0.5rem;
+  background: var(--color-accent);
+  color: #fff;
   border: none;
-  border-radius: 10px;
-  padding: 10px 20px;
-  font-weight: 600;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: background 0.15s, opacity 0.15s;
   white-space: nowrap;
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px var(--color-accent-glow);
+  background: var(--color-accent-light);
 }
 
 .btn-primary:disabled {
@@ -116,54 +83,67 @@ body::after {
   cursor: not-allowed;
 }
 
-.btn-ghost {
+.btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-glass);
-  border-radius: 10px;
-  padding: 10px 20px;
+  gap: 0.5rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 
-.btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-text-primary);
+.btn-secondary:hover {
+  background: var(--color-bg-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
-/* === 动画 === */
-@keyframes slide-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+/* === 输入框 === */
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-3px); }
-  75% { transform: translateX(3px); }
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.select {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
 
-.animate-slide-in {
-  animation: slide-in 0.3s ease forwards;
-}
-
-.animate-fade-in {
-  animation: fade-in 0.2s ease forwards;
+.select:focus {
+  border-color: var(--color-accent);
 }
 
 /* === 滚动条 === */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -171,28 +151,32 @@ body::after {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: #d1d5db;
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: #9ca3af;
 }
 
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.08) transparent;
+/* === 动画 === */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease forwards;
 }
 
 /* === 猜词游戏 === */
 .game-countdown {
-  font-size: 56px;
-  font-weight: 800;
+  font-size: 48px;
+  font-weight: 700;
   text-align: center;
-  margin: 16px 0;
+  margin: 12px 0;
   font-variant-numeric: tabular-nums;
-  color: var(--color-success);
+  color: var(--color-accent);
   line-height: 1;
 }
 
@@ -201,15 +185,25 @@ body::after {
   animation: shake 0.5s ease infinite;
 }
 
-.rank-gold { background: var(--color-gold); color: #000; }
-.rank-silver { background: var(--color-silver); color: #000; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.rank-gold { background: var(--color-gold); color: #fff; }
+.rank-silver { background: var(--color-silver); color: #fff; }
 .rank-bronze { background: var(--color-bronze); color: #fff; }
 
 /* === 移动端侧边栏遮罩 === */
 .sidebar-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 15;
-  animation: fade-in 0.2s ease;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 40;
+}
+
+/* === 响应式隐藏 === */
+@media (max-width: 767px) {
+  .hide-mobile { display: none !important; }
 }

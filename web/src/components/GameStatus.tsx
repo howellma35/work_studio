@@ -29,8 +29,6 @@ const DIFFICULTIES = [
   { value: 3, label: '较难' },
 ];
 
-const selectClass = "flex-1 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-[var(--color-text-primary)] text-sm outline-none focus:border-[var(--color-accent)]/50";
-
 export default function GameStatus({
   gameState,
   connected,
@@ -51,25 +49,25 @@ export default function GameStatus({
     <div>
       {gameState.status === 'idle' && (
         <div>
-          <h2 className="text-xl font-bold mb-1">猜词直播间</h2>
-          <p className="text-sm text-[var(--color-text-secondary)] mb-5">点击下方按钮开始新一轮游戏</p>
+          <h2 className="text-lg font-bold mb-1">猜词直播间</h2>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-4">点击下方按钮开始新一轮游戏</p>
 
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <label className="w-12 text-sm text-[var(--color-text-secondary)]">分类:</label>
-              <select className={selectClass} value={category} onChange={e => setCategory(e.target.value)}>
+              <label className="w-10 text-xs text-[var(--color-text-secondary)] shrink-0">分类</label>
+              <select className="select flex-1 text-sm" value={category} onChange={e => setCategory(e.target.value)}>
                 {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-3">
-              <label className="w-12 text-sm text-[var(--color-text-secondary)]">难度:</label>
-              <select className={selectClass} value={difficulty} onChange={e => setDifficulty(Number(e.target.value))}>
+              <label className="w-10 text-xs text-[var(--color-text-secondary)] shrink-0">难度</label>
+              <select className="select flex-1 text-sm" value={difficulty} onChange={e => setDifficulty(Number(e.target.value))}>
                 {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-3">
-              <label className="w-12 text-sm text-[var(--color-text-secondary)]">时长:</label>
-              <select className={selectClass} value={duration} onChange={e => setDuration(Number(e.target.value))}>
+              <label className="w-10 text-xs text-[var(--color-text-secondary)] shrink-0">时长</label>
+              <select className="select flex-1 text-sm" value={duration} onChange={e => setDuration(Number(e.target.value))}>
                 <option value={60}>1分钟</option>
                 <option value={180}>3分钟</option>
                 <option value={300}>5分钟</option>
@@ -81,7 +79,7 @@ export default function GameStatus({
               </select>
             </div>
             <button
-              className="btn-primary mt-3 text-base py-3"
+              className="btn-primary mt-2"
               onClick={() => onStartRound({ category: category || undefined, difficulty: difficulty || undefined, duration })}
               disabled={!connected}
             >
@@ -93,14 +91,14 @@ export default function GameStatus({
 
       {gameState.status === 'active' && (
         <div>
-          <div className="mb-4">
-            <span className="text-sm text-[var(--color-text-secondary)]">提示:</span>
-            <p className="text-xl font-semibold mt-1">{gameState.hint}</p>
+          <div className="mb-3">
+            <span className="text-xs text-[var(--color-text-muted)]">提示:</span>
+            <p className="text-lg font-semibold mt-0.5">{gameState.hint}</p>
           </div>
           <div className={`game-countdown ${gameState.remainingSeconds <= 10 ? 'urgent' : ''}`}>
             {formatTime(gameState.remainingSeconds)}
           </div>
-          <button className="btn-ghost w-full mt-3" onClick={onEndRound}>
+          <button className="btn-secondary w-full mt-3" onClick={onEndRound}>
             提前结束
           </button>
         </div>
@@ -109,9 +107,9 @@ export default function GameStatus({
       {gameState.status === 'finished' && (
         <div className="text-center">
           <p className="text-sm text-[var(--color-text-secondary)] mb-2">答案揭晓:</p>
-          <p className="text-3xl font-extrabold text-[var(--color-gold)] mb-6">{gameState.lastAnswer}</p>
+          <p className="text-3xl font-extrabold text-[var(--color-gold)] mb-5">{gameState.lastAnswer}</p>
           <button
-            className="btn-primary text-base py-3 w-full"
+            className="btn-primary w-full"
             onClick={() => onStartRound({ category: category || undefined, difficulty: difficulty || undefined, duration })}
             disabled={!connected}
           >

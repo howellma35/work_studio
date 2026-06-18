@@ -53,7 +53,6 @@ export default function AIChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages.length]);
 
-  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current;
     if (ta) {
@@ -165,7 +164,7 @@ export default function AIChat() {
   };
 
   return (
-    <div className="flex h-full" style={{ height: 'calc(100vh - 4rem)' }}>
+    <div className="flex" style={{ height: 'calc(100vh - 3.5rem)' }}>
       {/* Mobile Sidebar Backdrop */}
       {sidebarOpen && (
         <div className="sidebar-backdrop md:hidden" onClick={() => setSidebarOpen(false)} />
@@ -173,7 +172,7 @@ export default function AIChat() {
 
       {/* Sidebar Toggle (Mobile) */}
       <button
-        className="md:hidden fixed bottom-20 left-4 z-30 btn-primary !p-3 !rounded-full shadow-xl"
+        className="md:hidden fixed bottom-20 left-4 z-30 btn-primary !p-3 !rounded-full shadow-lg"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         <MessageSquare className="h-5 w-5" />
@@ -181,27 +180,28 @@ export default function AIChat() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed md:relative inset-y-0 left-0 z-20 w-72 flex-shrink-0
-        bg-[var(--color-bg-primary)]/95 backdrop-blur-xl border-r border-white/10
+        fixed md:relative inset-y-0 left-0 z-20 w-64 shrink-0
+        bg-[var(--color-bg)] border-r border-[var(--color-border)]
         flex flex-col transition-transform duration-200 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `} style={{ top: '4rem' }}>
-        <div className="p-4 border-b border-white/10 flex-shrink-0">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold text-base">对话列表</h2>
+      `} style={{ top: '3.5rem' }}>
+        {/* Sidebar Header */}
+        <div className="p-3 border-b border-[var(--color-border)] shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold text-sm">对话列表</h2>
             <div className="flex gap-1">
-              <button onClick={clearAll} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--color-text-secondary)] transition-colors" title="清空所有">
-                <Trash2 className="h-4 w-4" />
+              <button onClick={clearAll} className="p-1.5 rounded-lg hover:bg-[var(--color-bg-soft)] text-[var(--color-text-muted)] transition-colors" title="清空所有">
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
-              <button onClick={createConversation} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--color-accent-light)] transition-colors" title="新建对话">
-                <Plus className="h-4 w-4" />
+              <button onClick={createConversation} className="p-1.5 rounded-lg hover:bg-[var(--color-bg-soft)] text-[var(--color-accent)] transition-colors" title="新建对话">
+                <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]/50 transition-colors"
+            className="select w-full text-xs"
           >
             {siteConfig.model_options.map((m) => (
               <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
@@ -209,26 +209,30 @@ export default function AIChat() {
           </select>
         </div>
 
+        {/* Conversation List */}
         <div className="flex-1 overflow-y-auto p-2">
           {conversations.map((conv) => (
             <div
               key={conv.id}
               onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }}
-              className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer text-sm transition-all mb-1
-                ${activeId === conv.id ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent-light)]' : 'text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-[var(--color-text-primary)]'}`}
+              className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors mb-0.5
+                ${activeId === conv.id
+                  ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-soft)]'
+                }`}
             >
-              <MessageSquare className="h-4 w-4 flex-shrink-0" />
+              <MessageSquare className="h-3.5 w-3.5 shrink-0" />
               <span className="flex-1 truncate">{conv.title}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                className="p-0.5 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                className="p-0.5 rounded hover:bg-[var(--color-bg-muted)] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3 w-3" />
               </button>
             </div>
           ))}
           {conversations.length === 0 && (
-            <p className="text-center text-sm text-[var(--color-text-secondary)] py-8 opacity-50">暂无对话</p>
+            <p className="text-center text-xs text-[var(--color-text-muted)] py-8">暂无对话</p>
           )}
         </div>
       </aside>
@@ -239,31 +243,29 @@ export default function AIChat() {
         <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
           {!activeConversation ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-4">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-400/20 flex items-center justify-center mb-6">
-                <MessageSquare className="h-10 w-10 text-[var(--color-accent-light)]" />
+              <div className="w-16 h-16 rounded-2xl bg-[var(--color-accent-soft)] flex items-center justify-center mb-5">
+                <MessageSquare className="h-8 w-8 text-[var(--color-accent)]" />
               </div>
-              <h2 className="text-2xl font-bold mb-3 text-[var(--color-text-primary)]">AI 前沿探索</h2>
-              <p className="text-[var(--color-text-secondary)] max-w-md leading-relaxed">
-                选择或新建对话，与 AI 大模型进行智能对话。<br />支持上传知识库文件进行 RAG 问答。
+              <h2 className="text-xl font-bold mb-2 text-[var(--color-text)]">AI 对话</h2>
+              <p className="text-[var(--color-text-secondary)] max-w-sm text-sm">
+                选择或新建对话，与 AI 大模型进行智能对话。支持上传知识库文件进行 RAG 问答。
               </p>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-5">
+            <div className="max-w-3xl mx-auto space-y-4">
               {activeConversation.messages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-in`}>
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
                   <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3
                     ${msg.role === 'user'
                       ? 'bg-[var(--color-accent)] text-white rounded-br-sm'
-                      : 'glass-card rounded-bl-sm'
+                      : 'bg-[var(--color-bg-soft)] border border-[var(--color-border)] rounded-bl-sm'
                     }`}>
                     {msg.role === 'assistant' ? (
-                      <div className="prose prose-invert prose-sm max-w-none
-                        prose-p:my-1.5 prose-p:text-[var(--color-text-primary)]
+                      <div className="prose prose-sm max-w-none
+                        prose-p:my-1.5
                         prose-headings:mt-3 prose-headings:mb-1.5
-                        prose-code:text-[var(--color-accent-light)] prose-code:bg-white/5 prose-code:px-1 prose-code:rounded
-                        prose-pre:bg-[var(--color-bg-secondary)] prose-pre:border prose-pre:border-white/10 prose-pre:rounded-lg prose-pre:my-2
-                        prose-ul:my-1.5 prose-ol:my-1.5
-                        prose-li:text-[var(--color-text-secondary)]
+                        prose-code:text-[var(--color-accent)] prose-code:bg-[var(--color-bg-muted)] prose-code:px-1 prose-code:rounded
+                        prose-pre:bg-[var(--color-bg-muted)] prose-pre:border prose-pre:border-[var(--color-border)] prose-pre:rounded-lg prose-pre:my-2
                       ">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                       </div>
@@ -274,10 +276,10 @@ export default function AIChat() {
                 </div>
               ))}
               {loading && (
-                <div className="flex justify-start animate-slide-in">
-                  <div className="glass-card rounded-2xl rounded-bl-sm px-4 py-3">
+                <div className="flex justify-start animate-fade-in">
+                  <div className="bg-[var(--color-bg-soft)] border border-[var(--color-border)] rounded-2xl rounded-bl-sm px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-[var(--color-accent-light)]" />
+                      <Loader2 className="h-4 w-4 animate-spin text-[var(--color-accent)]" />
                       <span className="text-sm text-[var(--color-text-secondary)]">思考中...</span>
                     </div>
                   </div>
@@ -289,13 +291,13 @@ export default function AIChat() {
         </div>
 
         {/* Input Area */}
-        <div className="flex-shrink-0 border-t border-white/10 bg-[var(--color-bg-primary)]/50 backdrop-blur-sm p-4 sm:px-8">
+        <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)] p-4 sm:px-8">
           <div className="max-w-3xl mx-auto">
             {knowledgeFile && (
-              <div className="flex items-center gap-2 mb-2 text-xs text-[var(--color-accent-light)]">
+              <div className="flex items-center gap-2 mb-2 text-xs text-[var(--color-accent)]">
                 <Upload className="h-3.5 w-3.5" />
                 <span>知识库: {knowledgeFile.name}</span>
-                <button onClick={() => setKnowledgeFile(null)} className="p-0.5 hover:bg-white/10 rounded transition-colors">
+                <button onClick={() => setKnowledgeFile(null)} className="p-0.5 hover:bg-[var(--color-bg-soft)] rounded transition-colors">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -310,7 +312,7 @@ export default function AIChat() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[var(--color-text-secondary)] hover:text-[var(--color-accent-light)] hover:border-[var(--color-accent)]/30 transition-all flex-shrink-0"
+                className="p-2.5 rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors shrink-0"
                 title="上传知识库文件"
               >
                 <Upload className="h-5 w-5" />
@@ -322,12 +324,12 @@ export default function AIChat() {
                 onKeyDown={handleKeyDown}
                 placeholder="输入消息... (Shift+Enter 换行)"
                 rows={1}
-                className="flex-1 resize-none rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-text-secondary)]/40 transition-colors leading-relaxed"
+                className="input flex-1 resize-none !py-2.5 leading-relaxed"
               />
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || loading}
-                className="btn-primary !p-2.5 !rounded-xl flex-shrink-0 disabled:!opacity-40"
+                className="btn-primary !p-2.5 !rounded-xl shrink-0 disabled:!opacity-40"
               >
                 <Send className="h-5 w-5" />
               </button>

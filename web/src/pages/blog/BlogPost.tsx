@@ -23,7 +23,7 @@ export default function BlogPost() {
       <div className="mx-auto max-w-3xl px-4 py-20 text-center">
         <h1 className="text-2xl font-bold mb-4">文章不存在</h1>
         <p className="text-[var(--color-text-secondary)] mb-6">找不到对应的博客文章</p>
-        <Link to="/blog" className="btn-primary inline-flex items-center gap-2 px-5 py-2.5">
+        <Link to="/blog" className="btn-primary">
           <ArrowLeft className="h-4 w-4" /> 返回列表
         </Link>
       </div>
@@ -31,18 +31,17 @@ export default function BlogPost() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
       <Link
         to="/blog"
-        className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent-light)] mb-8 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] mb-6 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" /> 返回博客列表
       </Link>
 
       <article>
-        {/* Header */}
         <header className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold text-[var(--color-text-primary)] mb-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-text)] mb-3">
             {post.title}
           </h1>
           <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--color-text-secondary)]">
@@ -55,11 +54,11 @@ export default function BlogPost() {
               {post.readTime}
             </span>
           </div>
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="flex flex-wrap gap-1.5 mt-3">
             {post.tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-white/5 text-[var(--color-accent-light)] border border-white/10"
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
               >
                 <Tag className="h-3 w-3" />
                 {tag}
@@ -68,14 +67,13 @@ export default function BlogPost() {
           </div>
         </header>
 
-        {/* Content */}
-        <div className="prose prose-invert prose-lg max-w-none
-          prose-headings:text-[var(--color-text-primary)]
+        <div className="prose prose-sm sm:prose max-w-none
+          prose-headings:text-[var(--color-text)]
           prose-p:text-[var(--color-text-secondary)]
-          prose-a:text-[var(--color-accent-light)]
-          prose-strong:text-[var(--color-text-primary)]
-          prose-code:text-[var(--color-accent-light)] prose-code:bg-white/5 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-          prose-pre:bg-[var(--color-bg-secondary)] prose-pre:border prose-pre:border-white/10 prose-pre:rounded-xl
+          prose-a:text-[var(--color-accent)]
+          prose-strong:text-[var(--color-text)]
+          prose-code:text-[var(--color-accent)] prose-code:bg-[var(--color-bg-muted)] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
+          prose-pre:bg-[var(--color-bg-muted)] prose-pre:border prose-pre:border-[var(--color-border)] prose-pre:rounded-xl
           prose-li:text-[var(--color-text-secondary)]
         ">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
