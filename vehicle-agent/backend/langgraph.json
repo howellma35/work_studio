@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "automind": "./app/graph/supervisor.py:build_supervisor_graph"
+  },
+  "env": ".env"
+}

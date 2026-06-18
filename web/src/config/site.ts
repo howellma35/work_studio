@@ -18,11 +18,10 @@ export const siteConfig = {
 
   /** 可选大模型列表（AI 前沿探索模块使用） */
   model_options: [
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
-    { id: 'qwen-plus', name: '通义千问 Plus', provider: 'Alibaba' },
-    { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek' },
+    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', provider: '百炼' },
+    { id: 'deepseek-v3', name: 'DeepSeek V3', provider: '百炼' },
+    { id: 'qwen-plus', name: '通义千问 Plus', provider: '百炼' },
+    { id: 'qwen-max', name: '通义千问 Max', provider: '百炼' },
   ],
 
   /** AI 后端 API 基础地址（Docker 环境用相对路径，本地开发可设置环境变量） */

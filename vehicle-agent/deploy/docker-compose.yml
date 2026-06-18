@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # ===== AutoMind 后端 (FastAPI + LangGraph + CopilotKit Runtime) =====
+  vehicle-backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: automind-backend
+    restart: always
+    ports:
+      - "8001:8001"
+    env_file:
+      - ../backend/.env
+    volumes:
+      - vehicle-data:/app/data
+      - vehicle-logs:/app/logs
+    networks:
+      - automind-net
+
+  # ===== AutoMind 前端 (React + CopilotKit) =====
+  vehicle-frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: automind-frontend
+    restart: always
+    ports:
+      - "5174:80"
+    depends_on:
+      - vehicle-backend
+    networks:
+      - automind-net
+
+  # ===== LangFuse 可观测性平台 =====
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: automind-langfuse
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=automind-langfuse-secret-change-in-production
+      - SALT=automind-salt-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    networks:
+      - automind-net
+
+  # LangFuse 数据库
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: automind-langfuse-db
+    restart: always
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - automind-net
+
+  # ===== ChromaDB 向量数据库 (长期记忆) =====
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: automind-chromadb
+    restart: always
+    ports:
+      - "8002:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=false
+    networks:
+      - automind-net
+
+volumes:
+  vehicle-data:
+  vehicle-logs:
+  langfuse-db-data:
+  chromadb-data:
+
+networks:
+  automind-net:
+    driver: bridge

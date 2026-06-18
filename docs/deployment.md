@@ -32,7 +32,7 @@
 | ai-server | raggame-ai-server | 8000 | Python FastAPI | AI 聊天 + PDF 解析 |
 | game-server | raggame-game-server | 3001 | Python FastAPI + Socket.IO | 猜词游戏 WebSocket |
 
-> 注意：Redis 已不再需要，游戏后端使用内存排行榜。
+> 注意：Redis 已不再需要，游戏后端使用内存排行榜（重启后清空）。
 
 ---
 

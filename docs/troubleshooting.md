@@ -209,8 +209,8 @@ docker compose up -d --build web
 | 前端 | Vite 已自动代码分割和 tree-shaking，无需额外配置 |
 | Nginx | 已配置 gzip 压缩和静态资源缓存 |
 | AI 后端 | 大模型请求可设置合理的 `max_tokens` 减少输出长度 |
-| 游戏后端 | 内存排行榜适合小规模使用，大规模场景可引入 Redis |
-| Embedding | 词库 embedding 会缓存到 words.json，避免重复调用 API |
+| 游戏后端 | 内存排行榜适合小规模使用；若需大规模场景可引入 Redis |
+| Embedding | 词库 embedding 会缓存到内存中，避免重复调用 API |
 
 ---
 
