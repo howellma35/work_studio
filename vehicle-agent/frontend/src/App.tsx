@@ -1,11 +1,18 @@
-import { CopilotKit } from "@copilotkit/react-core";
+import { CopilotKit } from "@copilotkit/react-core/v2";
 import { CopilotPopup } from "@copilotkit/react-ui";
+import { HttpAgent } from "@ag-ui/client";
 import VehicleDashboard from "./components/VehicleDashboard";
-import "@copilotkit/react-ui/styles.css";
+import "@copilotkit/react-ui/v2/styles.css";
+
+// 创建 AG-UI 代理，直连后端 SSE 端点（通过 Vite 代理转发到 localhost:8001）
+// key 必须为 "default" — CopilotPopup 默认使用 default agent
+const automindAgent = new HttpAgent({
+  url: "/agent",
+});
 
 export default function App() {
   return (
-    <CopilotKit runtimeUrl="/copilotkit" agent="automind">
+    <CopilotKit agents__unsafe_dev_only={{ default: automindAgent }}>
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950">
         {/* 顶部导航 */}
         <header className="glass-card mx-4 mt-4 flex items-center justify-between px-6 py-4">
@@ -15,7 +22,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">AutoMind</h1>
-              <p className="text-xs text-slate-400">智能车机助手 · LangGraph + MCP + CopilotKit</p>
+              <p className="text-xs text-slate-400">智能车机助手 · LangGraph + MCP + AG-UI</p>
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm text-slate-300">
@@ -49,7 +56,6 @@ export default function App() {
             initial: "你好，我是你的车载智能助手。有什么可以帮你的吗？",
             placeholder: "输入指令，如：导航去公司、播放音乐、打开车窗...",
           }}
-          className="co-themed--dark"
         />
       </div>
     </CopilotKit>

@@ -27,6 +27,7 @@ class Settings:
     MAP_SERVICE_PROVIDER: str = os.getenv("MAP_SERVICE_PROVIDER", "amap")
 
     # ===== 记忆模块配置 =====
+    MEMORY_ENABLED: bool = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
     CHROMA_PERSIST_DIR: Path = Path(os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"))
     SQLITE_DB_PATH: str = os.getenv("SQLITE_DB_PATH", "./data/memory.db")
     EMBEDDING_API_KEY: str = os.getenv("EMBEDDING_API_KEY", "")

@@ -2,7 +2,7 @@
 AutoMind 车机智能助手 - FastAPI 服务入口
 
 集成:
-- CopilotKit Runtime（暴露 /copilotkit 端点，连接 LangGraph Agent）
+- AG-UI SSE 端点（暴露 /agent 端点，通过 ag-ui-langgraph 直接流式输出）
 - LangFuse 可观测性
 - LangGraph Studio 调试支持
 - 健康检查 & 状态查询接口
@@ -55,8 +55,22 @@ async def lifespan(app: FastAPI):
 
     # 预构建 Supervisor 图（会加载 MCP 工具）
     logger.info("正在构建 LangGraph Supervisor 图...")
-    get_graph()
-    logger.info("Supervisor 图构建完成，服务就绪")
+    await get_graph()
+    logger.info("Supervisor 图构建完成")
+
+    # 注册 AG-UI SSE 端点（标准协议，无需自定义适配器）
+    from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
+
+    agent = LangGraphAgent(
+        name="automind",
+        description="AutoMind 智能车机助手 - 支持导航、音乐、车辆控制、天气、提醒",
+        graph=await get_graph(),
+    )
+    add_langgraph_fastapi_endpoint(app, agent, "/agent")
+    logger.info("AG-UI SSE 端点已注册: POST /agent")
+    logger.info("=" * 60)
+    logger.info("AutoMind 服务就绪")
+    logger.info("=" * 60)
 
     yield
 
@@ -79,27 +93,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ===== CopilotKit Runtime 端点 =====
-# 在 lifespan 之后延迟注册，确保图已构建
-@app.on_event("startup")
-async def register_copilotkit():
-    """注册 CopilotKit Runtime 端点"""
-    from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
-    from copilotkit.integrations.fastapi import add_fastapi_endpoint
-
-    sdk = CopilotKitRemoteEndpoint(
-        agents=[
-            LangGraphAgent(
-                name="automind",
-                description="AutoMind 智能车机助手 - 支持导航、音乐、车辆控制、天气、提醒",
-                graph=get_graph(),
-            ),
-        ],
-    )
-    add_fastapi_endpoint(app, sdk, "/copilotkit")
-    logger.info("CopilotKit Runtime 已注册: /copilotkit")
 
 
 # ===== REST API 端点 =====

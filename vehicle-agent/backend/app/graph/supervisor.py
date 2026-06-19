@@ -9,7 +9,7 @@ AutoMind Supervisor Agent - 多Agent编排核心
 这是整个系统的"大脑"，通过 LangGraph 状态图协调所有子Agent。
 """
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import CompiledStateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph_supervisor import create_supervisor
 from loguru import logger
 
@@ -69,21 +69,7 @@ def _build_prompt(state: dict) -> str:
     )
 
 
-def _load_mcp_tools_sync() -> list:
-    """同步加载 MCP 工具（在应用启动时调用）"""
-    import asyncio
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        tools = loop.run_until_complete(load_mcp_tools())
-        loop.close()
-        return tools
-    except RuntimeError:
-        # 兜底：当前已有事件循环
-        return asyncio.run(load_mcp_tools())
-
-
-def build_supervisor_graph() -> CompiledStateGraph:
+async def build_supervisor_graph() -> CompiledStateGraph:
     """
     构建 Supervisor 多Agent编排图
 
@@ -105,8 +91,8 @@ def build_supervisor_graph() -> CompiledStateGraph:
     """
     logger.info("开始构建 AutoMind Supervisor 图...")
 
-    # 1. 加载 MCP 工具（同步方式）
-    tools = _load_mcp_tools_sync()
+    # 1. 加载 MCP 工具（异步方式）
+    tools = await load_mcp_tools()
 
     # 2. 创建子Agent
     agents = [
@@ -138,9 +124,9 @@ def build_supervisor_graph() -> CompiledStateGraph:
 _graph_instance: CompiledStateGraph | None = None
 
 
-def get_graph() -> CompiledStateGraph:
+async def get_graph() -> CompiledStateGraph:
     """获取编译好的 Supervisor 图（单例）"""
     global _graph_instance
     if _graph_instance is None:
-        _graph_instance = build_supervisor_graph()
+        _graph_instance = await build_supervisor_graph()
     return _graph_instance

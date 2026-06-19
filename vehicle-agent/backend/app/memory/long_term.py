@@ -17,6 +17,10 @@ class LongTermMemory:
     """长期用户偏好记忆，支持向量检索 + 结构化存储"""
 
     def __init__(self) -> None:
+        self.enabled = settings.MEMORY_ENABLED
+        if not self.enabled:
+            logger.info("长期记忆模块已禁用 (MEMORY_ENABLED=false)")
+            return
         self.db_path = settings.SQLITE_DB_PATH
         self._init_sqlite()
         self._chroma_collection = None
@@ -84,6 +88,8 @@ class LongTermMemory:
             content: 偏好文本描述（如"用户喜欢听周杰伦的歌"）
             metadata: 附加元数据（如 category=navigation/media/climate）
         """
+        if not self.enabled:
+            return
         collection = self._get_chroma_collection()
         if collection is None:
             return
@@ -114,6 +120,8 @@ class LongTermMemory:
         Returns:
             相关偏好文本列表
         """
+        if not self.enabled:
+            return []
         collection = self._get_chroma_collection()
         if collection is None:
             return []
@@ -133,6 +141,8 @@ class LongTermMemory:
 
     def get_profile(self, user_id: str) -> dict:
         """获取用户结构化档案"""
+        if not self.enabled:
+            return {}
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
             "SELECT profile FROM user_profiles WHERE user_id = ?", (user_id,)
@@ -143,6 +153,8 @@ class LongTermMemory:
 
     def update_profile(self, user_id: str, updates: dict) -> None:
         """更新用户结构化档案（合并写入）"""
+        if not self.enabled:
+            return
         current = self.get_profile(user_id)
         current.update(updates)
         conn = sqlite3.connect(self.db_path)
@@ -163,6 +175,8 @@ class LongTermMemory:
 
     def add_reminder(self, user_id: str, content: str, remind_at: str) -> str:
         """添加提醒"""
+        if not self.enabled:
+            return ""
         reminder_id = uuid.uuid4().hex[:8]
         conn = sqlite3.connect(self.db_path)
         conn.execute(
@@ -175,6 +189,8 @@ class LongTermMemory:
 
     def get_reminders(self, user_id: str, pending_only: bool = True) -> list[dict]:
         """获取用户提醒列表"""
+        if not self.enabled:
+            return []
         conn = sqlite3.connect(self.db_path)
         query = "SELECT id, content, remind_at, is_done FROM reminders WHERE user_id = ?"
         if pending_only:
