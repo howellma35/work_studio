@@ -17,7 +17,7 @@ from loguru import logger
 
 from app.config import settings
 from app.graph.supervisor import get_graph
-from app.utils.observability import setup_observability
+from app.utils.observability import get_langfuse_handler, setup_observability
 
 
 # ===== 日志配置 =====
@@ -61,10 +61,20 @@ async def lifespan(app: FastAPI):
     # 注册 AG-UI SSE 端点（标准协议，无需自定义适配器）
     from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
 
+    # 将 Langfuse CallbackHandler 注入到 Agent config
+    # 这是官方标准方案: https://langfuse.com/docs/integrations/langchain/tracing
+    # CallbackHandler 通过 LangChain 回调机制自动追踪所有 LLM/工具/Agent 调用
+    langfuse_handler = get_langfuse_handler()
+    agent_config = {}
+    if langfuse_handler:
+        agent_config = {"callbacks": [langfuse_handler]}
+        logger.info("Langfuse CallbackHandler 已注入到 LangGraphAgent")
+
     agent = LangGraphAgent(
         name="automind",
         description="AutoMind 智能车机助手 - 支持导航、音乐、车辆控制、天气、提醒",
         graph=await get_graph(),
+        config=agent_config,
     )
     add_langgraph_fastapi_endpoint(app, agent, "/agent")
     logger.info("AG-UI SSE 端点已注册: POST /agent")

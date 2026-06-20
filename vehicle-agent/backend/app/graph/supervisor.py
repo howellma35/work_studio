@@ -50,23 +50,35 @@ SUPERVISOR_PROMPT = """\
 记住：你是车主的全能智能助手，目标是让驾驶更安全、更便捷、更愉悦。"""
 
 
-def _build_prompt(state: dict) -> str:
-    """动态构建 Supervisor 提示词，注入记忆上下文"""
+def _build_prompt(state: dict) -> list:
+    """动态构建 Supervisor 提示词，注入记忆上下文和对话历史
+
+    返回 [SystemMessage, ...messages] 列表，确保模型同时看到：
+    1. 系统指令（路由规则 + 用户偏好上下文）
+    2. 完整对话历史（用户说了什么、之前聊了什么）
+    """
+    from langchain_core.messages import SystemMessage
+
     user_id = state.get("user_id", settings.DEFAULT_VEHICLE_USER_ID)
-    user_message = ""
     messages = state.get("messages", [])
+    user_message = ""
     if messages:
         last = messages[-1]
         user_message = last.content if hasattr(last, "content") else str(last)
 
     context = memory_manager.get_context(user_id, user_message)
 
-    return SUPERVISOR_PROMPT.format(
+    system_content = SUPERVISOR_PROMPT.format(
         routing_description=ROUTING_DESCRIPTION,
         user_profile=context.get("user_profile", {}),
         recalled_preferences=context.get("recalled_preferences", []),
         pending_reminders=context.get("pending_reminders", []),
     )
+
+    # 关键：返回 SystemMessage + 完整对话历史，不能只返回系统消息
+    # 如果只返回字符串，langgraph 的 create_react_agent 会丢弃对话历史，
+    # 导致模型看不到用户消息，无法产生 tool_calls
+    return [SystemMessage(content=system_content)] + list(messages)
 
 
 async def build_supervisor_graph() -> CompiledStateGraph:

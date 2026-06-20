@@ -1,7 +1,10 @@
 """LLM 模型工厂
 统一创建 LLM 实例，支持百炼平台 OpenAI 兼容接口
 
-自动注入 Langfuse CallbackHandler（若已配置），确保每次调用被追踪。
+Langfuse V4 SDK 通过 CallbackHandler 自动追踪 LLM 调用:
+- CallbackHandler 在 main.py 中注入到 LangGraphAgent config
+- 所有 ChatOpenAI 调用、工具调用、Agent 路由自动被追踪
+- 无需在此处手动注入任何 handler
 """
 from functools import lru_cache
 
@@ -9,23 +12,6 @@ from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from app.config import settings
-
-
-def _get_langfuse_callback() -> list:
-    """获取 Langfuse CallbackHandler（若已配置）"""
-    if settings.langfuse_enabled:
-        try:
-            from langfuse.callback import CallbackHandler
-            handler = CallbackHandler(
-                publicKey=settings.LANGFUSE_PUBLIC_KEY,
-                secretKey=settings.LANGFUSE_SECRET_KEY,
-                host=settings.LANGFUSE_HOST,
-            )
-            logger.debug(f"Langfuse handler 已注入 LLM | session_id 可在 trace 中查看")
-            return [handler]
-        except Exception as e:
-            logger.warning(f"Langfuse handler 创建失败: {e}")
-    return []
 
 
 @lru_cache(maxsize=1)
@@ -43,7 +29,11 @@ def create_llm(
         streaming: 是否流式输出
 
     Returns:
-        ChatOpenAI 实例（已注入 Langfuse callback）
+        ChatOpenAI 实例
+
+    Note:
+        Langfuse 追踪通过 CallbackHandler 实现（注入到 LangGraphAgent config），
+        不在此处注入。环境变量在 setup_observability() 中已设置。
     """
     llm = ChatOpenAI(
         model=model or settings.LLM_MODEL,
@@ -51,7 +41,6 @@ def create_llm(
         streaming=streaming,
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_API_BASE,
-        callbacks=_get_langfuse_callback(),
     )
-    logger.debug(f"LLM 已创建 | model={llm.model_name} | callbacks={len(llm.callbacks)}个")
+    logger.debug(f"LLM 已创建 | model={llm.model_name}")
     return llm

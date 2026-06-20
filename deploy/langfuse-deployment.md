@@ -1,74 +1,67 @@
 # Langfuse 可观测性平台部署指南
 
-> 在 mahongwei.com.cn 服务器上部署 Langfuse，用于追踪 AutoMind 车机助手的完整 LLM 链路
+> 在服务器上部署 Langfuse，用于追踪 AutoMind 车机助手的完整 LLM 链路
 
 ## 一、部署架构
 
 ```
 用户浏览器
-    ↓ HTTP (服务器IP:3000)
-Langfuse 容器 (:3000)
+    ↓ HTTP (服务器IP:3001)
+Langfuse 容器 (:3001)
     ↓
 PostgreSQL 容器 (:5432)
 ```
 
-Langfuse 通过端口 3000 直接访问，无需 Nginx 代理。
-（生产环境可后续加 Nginx + SSL 反向代理）
+Langfuse 通过端口 3001 直接访问（3000 端口已被其他服务占用），无需 Nginx 代理。
 
 ## 二、前置条件
 
 - 服务器已有 Docker + Docker Compose 环境
-- 服务器防火墙开放 3000 端口
+- 服务器防火墙开放 3001 端口
 
 ## 三、部署步骤
 
 ### Step 1: 生成密钥
 
-在服务器上运行以下命令，生成安全密钥：
+在服务器上运行：
 
 ```bash
-# NEXTAUTH_SECRET (认证密钥, 64位hex)
+# NEXTAUTH_SECRET (认证密钥)
 openssl rand -hex 32
-# 输出: a1b2c3d4e5f6...64位hex字符串
 
-# LANGFUSE_SECRET_KEY (API密钥, 64位hex)
+# LANGFUSE_APP_SECRET (Langfuse 服务内部密钥)
 openssl rand -hex 32
-# 输出: f6e5d4c3b2a1...64位hex字符串
 
-# SALT (盐值, 32位hex)
+# SALT (盐值)
 openssl rand -hex 16
-# 输出: 1a2b3c4d...32位hex字符串
 
-# 数据库密码 (32位hex)
+# 数据库密码
 openssl rand -hex 16
-# 输出: dbpass123abc...32位hex字符串
 ```
 
-### Step 2: 创建 deploy/.env 文件
+### Step 2: 编辑 deploy/.env 文件
 
-在 `deploy/` 目录下创建 `.env` 文件（存放敏感密钥，不要提交到 Git）：
+编辑 `vehicle-agent/deploy/.env` 中的关键变量：
 
 ```bash
-# deploy/.env (不要提交到 Git!)
-LANGFUSE_DB_PASSWORD=<Step1生成的数据库密码>
-LANGFUSE_NEXTAUTH_SECRET=<Step1生成的NEXTAUTH_SECRET>
-LANGFUSE_SECRET_KEY=<Step1生成的LANGFUSE_SECRET_KEY>
-LANGFUSE_SALT=<Step1生成的SALT>
-SERVER_IP=<你的服务器公网IP>   # 例如: 123.45.67.89
-```
+# ===== 必改项 =====
+SERVER_IP=<你的服务器公网IP>    # 例如: 123.45.67.89
+LLM_API_KEY=<你的百炼平台API Key>
 
-确保 `deploy/.gitignore` 包含 `.env`
+# ===== Langfuse 密钥 (用 Step1 生成的值替换) =====
+LANGFUSE_DB_PASSWORD=<数据库密码>
+LANGFUSE_NEXTAUTH_SECRET=<认证密钥>
+LANGFUSE_APP_SECRET=<服务内部密钥>
+LANGFUSE_SALT=<盐值>
+```
 
 ### Step 3: 启动服务
 
 ```bash
-cd deploy
+cd vehicle-agent/deploy
 
-# 启动所有服务（包括新增的 Langfuse）
+# 启动全部服务 (后端 + 前端 + Langfuse + ChromaDB)
 docker compose up -d
-
-# 查看 Langfuse 容器状态
-docker compose ps
 
 # 查看 Langfuse 日志
 docker compose logs -f langfuse
@@ -77,7 +70,7 @@ docker compose logs -f langfuse
 
 ### Step 4: 注册管理员账号并获取 API Key
 
-浏览器访问 `http://<你的服务器IP>:3000`：
+浏览器访问 `http://<服务器IP>:3001`：
 
 1. 点击 **Sign up** 注册第一个账号（自动成为管理员）
 2. 创建一个 **Project**（如 "AutoMind"）
@@ -86,58 +79,160 @@ docker compose logs -f langfuse
 
 ### Step 5: 配置 AutoMind 连接 Langfuse
 
-将 Step 4 获取的密钥填入 `vehicle-agent/backend/.env`：
+将 Step 4 获取的密钥填入 `vehicle-agent/deploy/.env`：
 
 ```bash
-# vehicle-agent/backend/.env
-LANGFUSE_HOST=http://<你的服务器IP>:3000
+LANGFUSE_HOST=http://<服务器IP>:3001
 LANGFUSE_PUBLIC_KEY=pk-lf-<你的真实Public Key>
 LANGFUSE_SECRET_KEY=sk-lf-<你的真实Secret Key>
 ```
 
-然后重启 AutoMind 服务。
+然后重启后端：`docker compose restart vehicle-backend`
 
-## 四、验证
+## 四、启动方式说明
 
-### 4.1 检查 Langfuse 状态
+### 4.1 全量启动 (推荐首次部署)
 
 ```bash
-curl http://<服务器IP>:3000/api/health
+# 启动全部 5 个服务
+docker compose up -d
+
+# 服务列表:
+#   vehicle-backend   - AutoMind 后端 (端口 8001)
+#   vehicle-frontend  - AutoMind 前端 (端口 5174)
+#   langfuse          - Langfuse Web  (端口 3001)
+#   langfuse-db       - Langfuse DB   (内部端口 5432)
+#   chromadb          - ChromaDB      (端口 8002)
+```
+
+### 4.2 单独启动 Langfuse (先部署调试)
+
+```bash
+# 只启动 Langfuse + 数据库
+docker compose up -d langfuse langfuse-db
+
+# 查看 Langfuse 日志
+docker compose logs -f langfuse
+
+# 等调试好后再启动后端
+docker compose up -d vehicle-backend
+
+# 全部启动后，最后启动前端
+docker compose up -d vehicle-frontend
+```
+
+### 4.3 其他常用操作
+
+```bash
+# 只重启后端
+docker compose restart vehicle-backend
+
+# 前端代码改了需要重新构建
+docker compose up -d --build vehicle-frontend
+
+# 查看 Langfuse 健康状态
+curl http://<服务器IP>:3001/api/health
+
+# 停止所有服务
+docker compose down
+
+# 只停止 Langfuse
+docker compose down langfuse langfuse-db
+```
+
+## 五、本地开发连接服务器 Langfuse
+
+本地开发时，前后端在本地跑，但 Langfuse 在服务器上。只需要修改本地 `.env`：
+
+### 5.1 修改本地 backend/.env
+
+```bash
+# vehicle-agent/backend/.env (本地开发用)
+
+# 将 LANGFUSE_HOST 指向服务器 (原来是 localhost)
+LANGFUSE_HOST=http://<服务器IP>:3001
+
+# 填入从 Langfuse 控制台获取的真实 API Key
+LANGFUSE_PUBLIC_KEY=pk-lf-<你的真实Public Key>
+LANGFUSE_SECRET_KEY=sk-lf-<你的真实Secret Key>
+```
+
+### 5.2 启动本地前后端
+
+```bash
+# 后端 (本地)
+cd vehicle-agent/backend
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+# 前端 (本地)
+cd vehicle-agent/frontend
+npm run dev
+```
+
+### 5.3 验证 Trace 数据流向
+
+1. 在本地浏览器访问 `http://localhost:5174` 使用 AutoMind
+2. 打开服务器 Langfuse 控制台 `http://<服务器IP>:3001`
+3. 查看 Trace 数据是否出现 — 如果 `LANGFUSE_HOST` 和密钥正确，数据会自动发送到服务器
+
+### 5.4 本地 LangGraph Studio 调试
+
+```powershell
+# PowerShell (Windows)
+$env:PYTHONUTF8=1
+cd vehicle-agent/backend
+langgraph dev --allow-blocking
+```
+
+LangGraph Studio 和 Langfuse 是互补的：
+- **LangGraph Studio** — 看图的执行流程（supervisor 路由、节点状态），本地实时调试
+- **Langfuse** — 看完整的 LLM trace（prompt/completion/token/latency），数据持久化，跨环境汇总
+
+两者可以同时启用，互不干扰。
+
+## 六、验证
+
+```bash
+curl http://<服务器IP>:3001/api/health
 # 应返回 {"status":"ok"}
 ```
 
-### 4.2 测试追踪
-
 发送一条消息给 AutoMind（如"空调调低点"），然后在 Langfuse 控制台查看：
 
-- **Trace 树状图** — supervisor → vehicle_agent → tool call 的完整链路
+- **Trace 树状图** — supervisor → vehicle_agent → tool call
 - **每次 LLM 调用** — prompt / completion / token / latency
 - **工具调用详情** — set_climate 的参数和返回值
 
-## 五、安全建议
+## 七、统一 .env 配置说明
 
-1. **关闭公开注册** — 创建管理员后修改 `LANGFUSE_ENABLE_SIGNUP: "false"`
-2. **数据库密码** — 使用 openssl 生成，不要用默认值
-3. **deploy/.env** — 不要提交到 Git
-4. **后续加固** — 生产环境建议加 Nginx + SSL 反向代理（参考 nginx.conf 中的注释）
-5. **定期备份** — `docker compose exec langfuse-db pg_dump -U langfuse langfuse > backup.sql`
+所有服务共用 `vehicle-agent/deploy/.env`，关键变量：
 
-## 六、常见问题
+| 区块 | 变量 | 说明 |
+|------|------|------|
+| Server IP | SERVER_IP | 服务器公网IP，Langfuse URL 依赖此值 |
+| Backend | BACKEND_PORT, LLM_API_KEY, LLM_MODEL | 后端服务配置 |
+| Langfuse 服务 | LANGFUSE_DB_PASSWORD, NEXTAUTH_SECRET, APP_SECRET | Langfuse 自身密钥（必须改！） |
+| Langfuse API | LANGFUSE_HOST, PUBLIC_KEY, SECRET_KEY | AutoMind 发送 trace 的连接配置 |
+| Frontend | FRONTEND_PORT, VITE_BACKEND_URL | 前端构建配置 |
+
+注意区分两个 SECRET_KEY：
+- `LANGFUSE_APP_SECRET` — Langfuse 服务内部密钥（部署时 openssl 生成）
+- `LANGFUSE_SECRET_KEY` — AutoMind 连接 Langfuse 的 API Secret Key（从 Langfuse 控制台获取）
+
+## 八、常见问题
 
 | 问题 | 解决方案 |
 |------|----------|
-| 端口 3000 无法访问 | 检查防火墙是否开放: `firewall-cmd --add-port=3000/tcp` |
+| 端口 3001 无法访问 | 检查防火墙: `firewall-cmd --add-port=3001/tcp` |
 | Langfuse 容器启动失败 | `docker compose logs langfuse` 查看，通常是 DB 连接错误 |
-| AutoMind 日志显示 "Langfuse 未配置" | 检查 .env 中 PUBLIC_KEY / SECRET_KEY 是否为真实值 |
-| Trace 数据未出现 | 确保 observability.py 的 CallbackHandler 正确注入 |
+| Trace 数据未出现 | 确保 LANGFUSE_PUBLIC_KEY / SECRET_KEY 为真实值 |
+| 后端报 "Langfuse 未配置" | 检查 .env 中密钥是否填写 |
+| 本地开发 trace 不进服务器 | 检查 backend/.env 的 LANGFUSE_HOST 是否指向服务器IP |
+| 前端改代码后页面没更新 | 需要 `docker compose up -d --build vehicle-frontend` |
 
-## 七、后续升级: 加 Nginx + SSL 反向代理
+## 九、安全建议
 
-当你需要 HTTPS 访问时，步骤如下：
-
-1. DNS: 添加 `langfuse.mahongwei.com.cn` A 记录指向服务器 IP
-2. SSL: `certbot certonly --standalone -d langfuse.mahongwei.com.cn`
-3. docker-compose.yml: 移除 Langfuse 的 `ports: 3000:3000`，改为内部端口
-4. nginx.conf: 添加 Langfuse HTTPS server block（参考注释中的模板）
-5. .env: 将 NEXTAUTH_URL 和 NEXT_PUBLIC_SITE_URL 改为 `https://langfuse.mahongwei.com.cn`
-6. vehicle-agent .env: 将 LANGFUSE_HOST 改为 `https://langfuse.mahongwei.com.cn`
+1. **关闭公开注册** — 创建管理员后设置 `LANGFUSE_ENABLE_SIGNUP: "false"`
+2. **数据库密码** — 使用 openssl 生成，不要用默认值 changeme123
+3. **deploy/.env** — 不要提交到 Git（已在 .gitignore 中排除）
+4. **定期备份** — `docker compose exec langfuse-db pg_dump -U langfuse langfuse > backup.sql`

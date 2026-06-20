@@ -35,7 +35,7 @@ class Settings:
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 
     # ===== LangFuse 可观测性配置 =====
-    LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+    LANGFUSE_BASE_URL: str = os.getenv("LANGFUSE_BASE_URL", os.getenv("LANGFUSE_HOST", "http://localhost:3000"))
     LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
     LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
 
