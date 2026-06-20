@@ -38,6 +38,44 @@ services:
     container_name: raggame-web
     restart: always
 
+  # ===== Langfuse 可观测性平台 =====
+  # PostgreSQL 数据库
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-changeme123}
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Langfuse Web 应用
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: langfuse-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-changeme123}@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://${SERVER_IP:-localhost}:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-my-nextauth-secret-change-in-production}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-my-secret-key-change-in-production}
+      SALT: ${LANGFUSE_SALT:-mysalt123}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_SIGNUP: "true"
+      NEXT_PUBLIC_SITE_URL: http://${SERVER_IP:-localhost}:3000
+
   # Nginx 反向代理
   nginx:
     image: nginx:alpine
@@ -58,3 +96,4 @@ volumes:
   game-data:
   game-logs:
   ai-logs:
+  langfuse-db-data:
