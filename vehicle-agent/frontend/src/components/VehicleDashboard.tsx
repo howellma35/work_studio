@@ -1,8 +1,4 @@
 import { useEffect, useState } from "react";
-import NavigationCard from "./NavigationCard";
-import MediaCard from "./MediaCard";
-import VehicleControlCard from "./VehicleControlCard";
-import WeatherCard from "./WeatherCard";
 
 interface AgentInfo {
   agent_name: string;
@@ -26,74 +22,80 @@ export default function VehicleDashboard() {
   }, []);
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {/* 时钟与状态卡 */}
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-400">当前时间</p>
-            <p className="text-4xl font-bold text-white tabular-nums">
-              {time.toLocaleTimeString("zh-CN", { hour12: false })}
-            </p>
-            <p className="text-sm text-slate-400 mt-1">
-              {time.toLocaleDateString("zh-CN", { weekday: "long", month: "long", day: "numeric" })}
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-400/20 glow-blue">
-              <span className="text-2xl">🚗</span>
-            </div>
-          </div>
+    <div className="flex gap-3 overflow-x-auto pb-1">
+      {/* 时钟 */}
+      <div className="glass-card shrink-0 px-4 py-2.5 flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-400/20 glow-blue">
+          <span className="text-sm">🚗</span>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white tabular-nums">
+            {time.toLocaleTimeString("zh-CN", { hour12: false })}
+          </p>
+          <p className="text-[10px] text-slate-400">
+            {time.toLocaleDateString("zh-CN", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            })}
+          </p>
         </div>
       </div>
 
-      {/* 车辆控制卡 */}
-      <VehicleControlCard />
+      {/* 车辆状态 */}
+      <div className="glass-card shrink-0 px-4 py-2.5 flex items-center gap-3">
+        <span className="text-sm">⚙️</span>
+        <div className="flex gap-2 text-[10px]">
+          <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-green-400">
+            电量 78%
+          </span>
+          <span className="rounded bg-slate-700/50 px-1.5 py-0.5 text-slate-400">
+            ❄️ 22°C
+          </span>
+          <span className="rounded bg-slate-700/50 px-1.5 py-0.5 text-slate-400">
+            🔒 已锁
+          </span>
+        </div>
+      </div>
 
-      {/* 天气卡 */}
-      <WeatherCard />
+      {/* 天气 */}
+      <div className="glass-card shrink-0 px-4 py-2.5 flex items-center gap-2">
+        <span className="text-sm">🌤️</span>
+        <span className="text-xs text-slate-300">上海 26°C</span>
+        <span className="text-[10px] text-slate-500">晴</span>
+      </div>
 
-      {/* 媒体播放器卡 */}
-      <MediaCard />
-
-      {/* 导航卡 */}
-      <NavigationCard />
-
-      {/* Agent 架构展示卡 */}
-      <div className="glass-card p-6 lg:col-span-2">
-        <h3 className="mb-4 text-lg font-bold text-white">Agent 架构</h3>
-        {agentInfo ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {agentInfo.sub_agents.map((agent) => (
-              <div
-                key={agent.name}
-                className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-3"
+      {/* Agent 架构标签 */}
+      {agentInfo && (
+        <div className="glass-card shrink-0 px-4 py-2.5 flex items-center gap-2">
+          <span className="text-sm">🤖</span>
+          <div className="flex gap-1">
+            {agentInfo.sub_agents.map((a) => (
+              <span
+                key={a.name}
+                className="rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-400"
               >
-                <p className="text-sm font-semibold text-cyan-400">{agent.desc}</p>
-                <p className="mb-2 text-xs text-slate-500">{agent.name}</p>
-                <div className="flex flex-wrap gap-1">
-                  {agent.tools.map((tool) => (
-                    <span
-                      key={tool}
-                      className="rounded bg-slate-700/50 px-1.5 py-0.5 text-[10px] text-slate-400"
-                    >
-                      {tool}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                {a.desc}
+              </span>
             ))}
           </div>
-        ) : (
-          <p className="text-sm text-slate-500">加载中...</p>
-        )}
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700/50 pt-4 text-xs text-slate-400">
-          <span className="rounded-full bg-blue-500/10 px-3 py-1 text-blue-400">LangGraph 编排</span>
-          <span className="rounded-full bg-purple-500/10 px-3 py-1 text-purple-400">MCP 协议</span>
-          <span className="rounded-full bg-green-500/10 px-3 py-1 text-green-400">ChromaDB 记忆</span>
-          <span className="rounded-full bg-orange-500/10 px-3 py-1 text-orange-400">LangFuse 观测</span>
-          <span className="rounded-full bg-pink-500/10 px-3 py-1 text-pink-400">CopilotKit UI</span>
         </div>
+      )}
+
+      {/* 技术栈标签 */}
+      <div className="glass-card shrink-0 px-4 py-2.5 flex items-center gap-1.5">
+        <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400">
+          LangGraph
+        </span>
+        <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] text-purple-400">
+          MCP
+        </span>
+        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] text-green-400">
+          ChromaDB
+        </span>
+        <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] text-orange-400">
+          LangFuse
+        </span>
       </div>
     </div>
   );

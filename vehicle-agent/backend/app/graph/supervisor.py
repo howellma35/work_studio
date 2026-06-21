@@ -8,6 +8,8 @@ AutoMind Supervisor Agent - 多Agent编排核心
 
 这是整个系统的"大脑"，通过 LangGraph 状态图协调所有子Agent。
 """
+import asyncio
+
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_supervisor import create_supervisor
@@ -134,11 +136,14 @@ async def build_supervisor_graph() -> CompiledStateGraph:
 
 # 全局图实例（延迟加载）
 _graph_instance: CompiledStateGraph | None = None
+_graph_lock = asyncio.Lock()
 
 
 async def get_graph() -> CompiledStateGraph:
-    """获取编译好的 Supervisor 图（单例）"""
+    """获取编译好的 Supervisor 图（单例，Double-Check Locking）"""
     global _graph_instance
     if _graph_instance is None:
-        _graph_instance = await build_supervisor_graph()
+        async with _graph_lock:
+            if _graph_instance is None:
+                _graph_instance = await build_supervisor_graph()
     return _graph_instance

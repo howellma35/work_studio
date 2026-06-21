@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoMind 车机智能助手 - 架构与代码工作流</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    --green: #34d399; --purple: #a78bfa; --orange: #fb923c;
+    --pink: #f472b6; --red: #f87171; --yellow: #fbbf24;
+    --cyan: #22d3ee;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 2rem; background: linear-gradient(135deg, var(--accent), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px; }
+  h2 { font-size: 1.4rem; color: var(--accent); margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.1rem; color: var(--cyan); margin: 20px 0 10px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: .75rem; margin: 2px; }
+
+  /* ---- Architecture Diagram ---- */
+  .arch-grid { display: grid; grid-template-columns: 260px 1fr 220px; gap: 16px; margin: 16px 0; }
+  .arch-col { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; transition: all .2s; position: relative; }
+  .card:hover { border-color: var(--accent); box-shadow: 0 0 20px rgba(56,189,248,.12); transform: translateY(-2px); }
+  .card-title { font-weight: 700; font-size: .95rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .card-body { font-size: .82rem; color: var(--muted); }
+  .card-body code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 4px; font-size: .78rem; }
+  .icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .9rem; flex-shrink: 0; }
+
+  /* Color themes */
+  .c-blue .icon { background: rgba(56,189,248,.15); color: var(--accent); }
+  .c-green .icon { background: rgba(52,211,153,.15); color: var(--green); }
+  .c-purple .icon { background: rgba(167,139,250,.15); color: var(--purple); }
+  .c-orange .icon { background: rgba(251,146,60,.15); color: var(--orange); }
+  .c-pink .icon { background: rgba(244,114,182,.15); color: var(--pink); }
+  .c-cyan .icon { background: rgba(34,211,238,.15); color: var(--cyan); }
+  .c-yellow .icon { background: rgba(251,191,36,.15); color: var(--yellow); }
+  .c-red .icon { background: rgba(248,113,113,.15); color: var(--red); }
+
+  /* Arrows */
+  .arrow-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 0; color: var(--muted); font-size: .78rem; }
+  .arrow-row .line { flex: 1; height: 1px; background: var(--border); position: relative; }
+  .arrow-row .line::after { content: '▶'; position: absolute; right: -2px; top: -8px; font-size: .7rem; color: var(--accent); }
+  .arrow-down { text-align: center; color: var(--accent); font-size: 1.2rem; padding: 4px 0; }
+
+  /* Flow diagram */
+  .flow { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; margin: 16px 0; }
+  .flow-step { flex: 1; min-width: 140px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; position: relative; }
+  .flow-step::after { content: '→'; position: absolute; right: -14px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 1.2rem; z-index: 1; }
+  .flow-step:last-child::after { display: none; }
+  .flow-step .step-num { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; background: var(--accent); color: var(--bg); font-size: .72rem; font-weight: 700; margin-bottom: 6px; }
+  .flow-step .step-title { font-weight: 600; font-size: .85rem; }
+  .flow-step .step-desc { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+
+  /* Supervisor diagram */
+  .supervisor-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 16px 0; }
+  .supervisor-node { background: linear-gradient(135deg, rgba(56,189,248,.12), rgba(167,139,250,.12)); border: 2px solid var(--accent); border-radius: 16px; padding: 18px 40px; text-align: center; font-weight: 700; font-size: 1.05rem; position: relative; }
+  .supervisor-node small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); margin-top: 4px; }
+  .branch-lines { display: flex; gap: 0; width: 100%; justify-content: center; position: relative; height: 30px; }
+  .branch-lines::before { content: ''; position: absolute; top: 0; left: 50%; width: 1px; height: 15px; background: var(--accent); }
+  .branch-lines::after { content: ''; position: absolute; top: 15px; left: calc(10%); right: calc(10%); height: 1px; background: var(--accent); }
+  .sub-agents { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; width: 100%; }
+  .sub-agent { text-align: center; position: relative; }
+  .sub-agent::before { content: ''; position: absolute; top: -15px; left: 50%; width: 1px; height: 15px; background: var(--accent); }
+  .sub-agent .card { padding: 12px 8px; }
+  .sub-agent .card-title { justify-content: center; font-size: .82rem; }
+
+  /* Memory system */
+  .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+
+  /* File tree */
+  .file-tree { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: .78rem; color: var(--muted); background: rgba(15,23,42,.6); border: 1px solid var(--border); border-radius: 10px; padding: 16px; line-height: 1.8; overflow-x: auto; }
+  .file-tree .dir { color: var(--accent); font-weight: 600; }
+  .file-tree .file { color: var(--text); }
+  .file-tree .comment { color: #64748b; font-style: italic; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab-btn { padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: .85rem; transition: all .2s; }
+  .tab-btn.active, .tab-btn:hover { background: rgba(56,189,248,.1); border-color: var(--accent); color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Sequence */
+  .seq-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  .seq-table th { text-align: left; padding: 8px 12px; background: var(--surface); color: var(--accent); font-size: .82rem; border-bottom: 2px solid var(--border); }
+  .seq-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: .82rem; vertical-align: top; }
+  .seq-table tr:hover td { background: rgba(56,189,248,.04); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 600; }
+  .badge-fe { background: rgba(244,114,182,.15); color: var(--pink); }
+  .badge-be { background: rgba(56,189,248,.15); color: var(--accent); }
+  .badge-agent { background: rgba(167,139,250,.15); color: var(--purple); }
+  .badge-mcp { background: rgba(52,211,153,.15); color: var(--green); }
+  .badge-mem { background: rgba(251,191,36,.15); color: var(--yellow); }
+  .badge-obs { background: rgba(251,146,60,.15); color: var(--orange); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .arch-grid { grid-template-columns: 1fr; }
+    .sub-agents { grid-template-columns: repeat(2, 1fr); }
+    .mem-grid { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .flow-step::after { content: '↓'; right: 50%; top: auto; bottom: -14px; transform: translateX(50%); }
+  }
+
+  .highlight-box { background: linear-gradient(135deg, rgba(56,189,248,.06), rgba(167,139,250,.06)); border: 1px solid rgba(56,189,248,.2); border-radius: 12px; padding: 16px; margin: 16px 0; }
+  .tech-stack { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .tech-item { padding: 6px 14px; border-radius: 8px; font-size: .8rem; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>AutoMind 智能车机助手</h1>
+<p class="subtitle">系统架构 &amp; 代码工作流全景图 · LangGraph + MCP + CopilotKit + AG-UI</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('overview',this)">📐 整体架构</button>
+  <button class="tab-btn" onclick="showTab('flow',this)">🔄 请求工作流</button>
+  <button class="tab-btn" onclick="showTab('supervisor',this)">🧠 Supervisor 编排</button>
+  <button class="tab-btn" onclick="showTab('mcp',this)">🔧 MCP 工具体系</button>
+  <button class="tab-btn" onclick="showTab('memory',this)">💾 记忆系统</button>
+  <button class="tab-btn" onclick="showTab('sequence',this)">📋 端到端时序</button>
+  <button class="tab-btn" onclick="showTab('files',this)">📁 代码结构</button>
+</div>
+
+<!-- ============== TAB 1: 整体架构 ============== -->
+<div id="tab-overview" class="tab-panel active">
+
+<h2>整体系统架构</h2>
+
+<div class="tech-stack">
+  <span class="tech-item" style="background:rgba(244,114,182,.12);color:var(--pink)">React + Vite 前端</span>
+  <span class="tech-item" style="background:rgba(56,189,248,.12);color:var(--accent)">FastAPI 后端</span>
+  <span class="tech-item" style="background:rgba(167,139,250,.12);color:var(--purple)">LangGraph 编排</span>
+  <span class="tech-item" style="background:rgba(52,211,153,.12);color:var(--green)">MCP 协议</span>
+  <span class="tech-item" style="background:rgba(251,191,36,.12);color:var(--yellow)">ChromaDB + SQLite</span>
+  <span class="tech-item" style="background:rgba(251,146,60,.12);color:var(--orange)">LangFuse 可观测</span>
+  <span class="tech-item" style="background:rgba(34,211,238,.12);color:var(--cyan)">CopilotKit + AG-UI</span>
+  <span class="tech-item" style="background:rgba(248,113,113,.12);color:var(--red)">百炼平台 LLM</span>
+</div>
+
+<div class="arch-grid">
+  <!-- Left: Frontend -->
+  <div class="arch-col">
+    <h3 style="color:var(--pink)">🖥️ 前端 (React)</h3>
+    <div class="card c-pink">
+      <div class="card-title"><div class="icon">💬</div> CopilotPopup</div>
+      <div class="card-body">
+        浮动聊天窗口<br>
+        AG-UI 协议通信<br>
+        <code>HttpAgent → /agent</code>
+      </div>
+    </div>
+    <div class="card c-pink">
+      <div class="card-title"><div class="icon">📊</div> VehicleDashboard</div>
+      <div class="card-body">
+        <code>NavigationCard</code> 导航面板<br>
+        <code>MediaCard</code> 音乐播放器<br>
+        <code>VehicleControlCard</code> 车辆控制<br>
+        <code>WeatherCard</code> 天气信息
+      </div>
+    </div>
+    <div class="card c-pink">
+      <div class="card-title"><div class="icon">⚙️</div> Vite DevServer</div>
+      <div class="card-body">
+        端口 <code>:5174</code><br>
+        代理 <code>/agent → :8001</code><br>
+        代理 <code>/api/vehicle → :8001</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Middle: Backend Core -->
+  <div class="arch-col">
+    <h3 style="color:var(--accent)">⚡ 后端核心 (FastAPI + LangGraph)</h3>
+
+    <div class="card c-blue">
+      <div class="card-title"><div class="icon">🚀</div> FastAPI 入口 · main.py</div>
+      <div class="card-body">
+        <code>POST /agent</code> AG-UI SSE 端点（LangGraphAgent）<br>
+        <code>GET /api/vehicle/health</code> 健康检查<br>
+        <code>GET /api/vehicle/agent-info</code> Agent 架构信息<br>
+        生命周期：日志 → 可观测性 → 构建 Supervisor 图 → 注册 SSE
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <div class="card c-purple" style="border-color: var(--purple);">
+      <div class="card-title"><div class="icon">🧠</div> Supervisor 多Agent编排</div>
+      <div class="card-body">
+        <strong>langgraph-supervisor</strong> 构建核心编排图<br>
+        意图识别 → 任务分发 → 结果汇总<br>
+        <code>MemorySaver</code> checkpointer 多轮对话<br>
+        动态提示词注入记忆上下文
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;">
+      <div class="card c-green">
+        <div class="card-title"><div class="icon">🔧</div> MCP Server</div>
+        <div class="card-body">
+          FastMCP 聚合工具服务器<br>
+          stdio / SSE 双模式<br>
+          <code>langchain-mcp-adapters</code>
+        </div>
+      </div>
+      <div class="card c-yellow">
+        <div class="card-title"><div class="icon">💾</div> 记忆系统</div>
+        <div class="card-body">
+          短期: <code>MemorySaver</code><br>
+          长期: <code>ChromaDB</code> 向量<br>
+          结构化: <code>SQLite</code> 档案
+        </div>
+      </div>
+      <div class="card c-orange">
+        <div class="card-title"><div class="icon">📡</div> LangFuse</div>
+        <div class="card-body">
+          V4 SDK CallbackHandler<br>
+          自动追踪 LLM / 工具 / Agent<br>
+          trace 树状图可视化
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <div class="card c-red">
+      <div class="card-title"><div class="icon">🤖</div> LLM 模型层</div>
+      <div class="card-body">
+        <code>ChatOpenAI</code> (百炼平台 OpenAI 兼容接口)<br>
+        模型: <code>deepseek-v3</code> · 嵌入: <code>text-embedding-v3</code><br>
+        API: <code>dashscope.aliyuncs.com/compatible-mode/v1</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: External -->
+  <div class="arch-col">
+    <h3 style="color:var(--green)">🌐 外部服务</h3>
+    <div class="card c-green">
+      <div class="card-title"><div class="icon">🗺️</div> 地图 API</div>
+      <div class="card-body">高德/百度地图<br>(当前模拟数据)</div>
+    </div>
+    <div class="card c-orange">
+      <div class="card-title"><div class="icon">🔭</div> LangFuse Server</div>
+      <div class="card-body">可观测性平台<br>自托管 / Cloud</div>
+    </div>
+    <div class="card c-cyan">
+      <div class="card-title"><div class="icon">☁️</div> 百炼平台</div>
+      <div class="card-body">阿里云 DashScope<br>LLM + Embedding</div>
+    </div>
+    <div class="card c-yellow">
+      <div class="card-title"><div class="icon">🎵</div> 车辆总线</div>
+      <div class="card-body">CAN / 车机接口<br>(当前模拟数据)</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============== TAB 2: 请求工作流 ============== -->
+<div id="tab-flow" class="tab-panel">
+<h2>用户请求端到端工作流</h2>
+<p style="color:var(--muted);margin-bottom:16px">以用户发送「导航去公司」为例，展示完整数据流转路径</p>
+
+<div class="flow">
+  <div class="flow-step" style="border-color:var(--pink)">
+    <div class="step-num" style="background:var(--pink)">1</div>
+    <div class="step-title">用户输入</div>
+    <div class="step-desc">CopilotPopup 聊天框<br>HttpAgent 发送消息</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--pink)">
+    <div class="step-num" style="background:var(--pink)">2</div>
+    <div class="step-title">Vite 代理</div>
+    <div class="step-desc">/agent → localhost:8001<br>SSE 长连接建立</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--accent)">
+    <div class="step-num">3</div>
+    <div class="step-title">FastAPI 接收</div>
+    <div class="step-desc">LangGraphAgent 解析<br>AG-UI 协议消息</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--purple)">
+    <div class="step-num" style="background:var(--purple)">4</div>
+    <div class="step-title">Supervisor 意图</div>
+    <div class="step-desc">LLM 识别意图<br>选择 navigation_agent</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--green)">
+    <div class="step-num" style="background:var(--green)">5</div>
+    <div class="step-title">子Agent执行</div>
+    <div class="step-desc">navigation_agent<br>调用 MCP 工具</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--green)">
+    <div class="step-num" style="background:var(--green)">6</div>
+    <div class="step-title">MCP 工具</div>
+    <div class="step-desc">plan_route()<br>返回路线数据</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--purple)">
+    <div class="step-num" style="background:var(--purple)">7</div>
+    <div class="step-title">结果汇总</div>
+    <div class="step-desc">Supervisor 汇总<br>生成自然语言回复</div>
+  </div>
+  <div class="flow-step" style="border-color:var(--accent)">
+    <div class="step-num">8</div>
+    <div class="step-title">SSE 流式返回</div>
+    <div class="step-desc">AG-UI 协议<br>流式推送前端</div>
+  </div>
+</div>
+
+<div class="highlight-box">
+  <h3>关键数据流细节</h3>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:10px;">
+    <div>
+      <strong style="color:var(--accent)">↑ 上行（用户 → 后端）</strong>
+      <ul style="color:var(--muted); font-size:.85rem; padding-left:18px; margin-top:6px;">
+        <li>CopilotKit 封装用户消息为 AG-UI RunAgentInput</li>
+        <li>HttpAgent 通过 SSE POST 发送到 /agent</li>
+        <li>LangGraphAgent 解析为 LangGraph state.messages</li>
+        <li>thread_id 关联对话会话</li>
+      </ul>
+    </div>
+    <div>
+      <strong style="color:var(--green)">↓ 下行（后端 → 用户）</strong>
+      <ul style="color:var(--muted); font-size:.85rem; padding-left:18px; margin-top:6px;">
+        <li>LLM 流式输出 token → AG-UI SSE events</li>
+        <li>工具调用状态实时推送</li>
+        <li>CopilotKit 渲染消息气泡 + 工具状态</li>
+        <li>MemorySaver 自动持久化 checkpoint</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============== TAB 3: Supervisor 编排 ============== -->
+<div id="tab-supervisor" class="tab-panel">
+<h2>LangGraph Supervisor 多Agent编排</h2>
+<p style="color:var(--muted);margin-bottom:16px">
+  基于 <code style="color:var(--cyan)">langgraph-supervisor</code> 构建的 Supervisor 模式，
+  由一个"大脑"协调 5 个专业子 Agent
+</p>
+
+<div class="supervisor-wrap">
+  <div class="supervisor-node">
+    🧠 Supervisor Agent
+    <small>意图识别 · 任务分发 · 结果汇总 · 模糊意图澄清</small>
+    <small style="color:var(--cyan)">create_supervisor() + MemorySaver checkpointer</small>
+  </div>
+
+  <div class="branch-lines"></div>
+
+  <div class="sub-agents">
+    <div class="sub-agent">
+      <div class="card c-blue" style="border-color:rgba(56,189,248,.3)">
+        <div class="card-title"><div class="icon">🗺️</div> 导航专家</div>
+        <div class="card-body">
+          <code>navigation_agent</code><br>
+          plan_route · search_poi<br>get_traffic_info
+        </div>
+      </div>
+    </div>
+    <div class="sub-agent">
+      <div class="card c-pink" style="border-color:rgba(244,114,182,.3)">
+        <div class="card-title"><div class="icon">🎵</div> 多媒体专家</div>
+        <div class="card-body">
+          <code>media_agent</code><br>
+          play_music · pause_music<br>next_song · set_volume
+        </div>
+      </div>
+    </div>
+    <div class="sub-agent">
+      <div class="card c-green" style="border-color:rgba(52,211,153,.3)">
+        <div class="card-title"><div class="icon">🚗</div> 车辆控制</div>
+        <div class="card-body">
+          <code>vehicle_agent</code><br>
+          control_window · set_climate<br>lock_doors · set_seat
+        </div>
+      </div>
+    </div>
+    <div class="sub-agent">
+      <div class="card c-cyan" style="border-color:rgba(34,211,238,.3)">
+        <div class="card-title"><div class="icon">🌤️</div> 天气助手</div>
+        <div class="card-body">
+          <code>weather_agent</code><br>
+          get_weather<br>get_forecast
+        </div>
+      </div>
+    </div>
+    <div class="sub-agent">
+      <div class="card c-yellow" style="border-color:rgba(251,191,36,.3)">
+        <div class="card-title"><div class="icon">⏰</div> 提醒助手</div>
+        <div class="card-body">
+          <code>reminder_agent</code><br>
+          create_reminder<br>list_reminders · save_preference
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="highlight-box">
+  <h3>Supervisor 工作流程</h3>
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px;">
+    <div>
+      <strong style="color:var(--purple)">🔄 动态提示词构建</strong>
+      <div class="card-body" style="margin-top:6px">
+        <code>_build_prompt(state)</code> 每次调用时动态注入：<br>
+        ① 路由描述（5个子Agent能力说明）<br>
+        ② 用户档案（SQLite 结构化数据）<br>
+        ③ 召回偏好（ChromaDB 语义检索 top-3）<br>
+        ④ 待处理提醒（SQLite 查询）<br>
+        ⑤ 完整对话历史（messages 列表）
+      </div>
+    </div>
+    <div>
+      <strong style="color:var(--purple)">🎯 路由决策机制</strong>
+      <div class="card-body" style="margin-top:6px">
+        <code>create_supervisor()</code> 内部使用 LLM 决策：<br>
+        ① Supervisor LLM 分析用户意图<br>
+        ② 输出 <code>transfer_to_xxx</code> 工具调用<br>
+        ③ 子Agent 通过 <code>create_react_agent</code> 执行<br>
+        ④ 子Agent 完成后自动返回 Supervisor<br>
+        ⑤ Supervisor 决定继续委派或结束<br>
+        ⑥ <code>MemorySaver</code> 保存每步 checkpoint
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>子Agent 工具分配策略</h3>
+<table class="seq-table">
+  <tr><th>子Agent</th><th>工具关键词过滤</th><th>MCP 工具</th><th>特殊说明</th></tr>
+  <tr><td><span class="badge badge-agent">navigation</span></td><td>plan_route, search_poi, traffic</td><td>plan_route, search_poi, get_traffic_info</td><td>默认起点"当前位置"</td></tr>
+  <tr><td><span class="badge badge-agent">media</span></td><td>music, song, volume, playlist</td><td>play_music, pause_music, next_song, set_volume, get_playlist</td><td>内存维护播放状态</td></tr>
+  <tr><td><span class="badge badge-agent">vehicle</span></td><td>window, climate, door, seat, vehicle_status</td><td>control_window, set_climate, lock_doors, set_seat, get_vehicle_status</td><td>模拟车辆CAN总线</td></tr>
+  <tr><td><span class="badge badge-agent">weather</span></td><td>weather, forecast</td><td>get_weather, get_forecast</td><td>模拟天气数据库</td></tr>
+  <tr><td><span class="badge badge-agent">reminder</span></td><td>— (内置工具)</td><td>create_reminder, list_reminders, save_user_preference</td><td>直接操作记忆系统</td></tr>
+</table>
+</div>
+
+<!-- ============== TAB 4: MCP 工具体系 ============== -->
+<div id="tab-mcp" class="tab-panel">
+<h2>MCP (Model Context Protocol) 工具体系</h2>
+<p style="color:var(--muted);margin-bottom:16px">
+  基于 FastMCP 构建的统一工具服务器，通过 <code style="color:var(--cyan)">langchain-mcp-adapters</code> 桥接到 LangChain
+</p>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+  <div>
+    <h3>🔌 MCP 连接架构</h3>
+    <div class="card c-green" style="margin-bottom:12px">
+      <div class="card-title">连接模式</div>
+      <div class="card-body">
+        <strong>stdio 模式</strong>（开发推荐）<br>
+        Agent 启动 → <code>MultiServerMCPClient</code> → 创建子进程 <code>python -m app.mcp.server</code><br><br>
+        <strong>SSE 模式</strong>（生产部署）<br>
+        Agent 启动 → <code>MultiServerMCPClient</code> → HTTP 连接 <code>http://localhost:8765</code>
+      </div>
+    </div>
+
+    <div class="card c-green">
+      <div class="card-title">工具加载流程</div>
+      <div class="card-body">
+        1. <code>load_mcp_tools()</code> 创建 MCP Client<br>
+        2. 根据 <code>MCP_TRANSPORT</code> 选择 stdio/SSE<br>
+        3. 调用 <code>client.get_tools()</code> 获取所有工具<br>
+        4. 返回 <code>list[BaseTool]</code> LangChain 标准工具<br>
+        5. 各子Agent 按关键词过滤分配工具
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3>📦 MCP Server 聚合架构</h3>
+    <div class="card c-green">
+      <div class="card-title">server.py 主服务器</div>
+      <div class="card-body">
+        <code>FastMCP("AutoMindVehicleServer")</code><br><br>
+        聚合 4 个子工具集：<br>
+        ├── <code>navigation_tools</code> → FastMCP("NavigationTools")<br>
+        │&nbsp;&nbsp; ├── plan_route(origin, destination, avoid_traffic)<br>
+        │&nbsp;&nbsp; ├── search_poi(keyword, location)<br>
+        │&nbsp;&nbsp; └── get_traffic_info(route_id)<br>
+        ├── <code>media_tools</code> → FastMCP("MediaTools")<br>
+        │&nbsp;&nbsp; ├── play_music(song_name, artist)<br>
+        │&nbsp;&nbsp; ├── pause_music()<br>
+        │&nbsp;&nbsp; ├── next_song()<br>
+        │&nbsp;&nbsp; ├── set_volume(level)<br>
+        │&nbsp;&nbsp; └── get_playlist()<br>
+        ├── <code>vehicle_tools</code> → FastMCP("VehicleTools")<br>
+        │&nbsp;&nbsp; ├── control_window(position, action)<br>
+        │&nbsp;&nbsp; ├── set_climate(temp, mode, fan_speed)<br>
+        │&nbsp;&nbsp; ├── lock_doors(action)<br>
+        │&nbsp;&nbsp; ├── set_seat(position, heated)<br>
+        │&nbsp;&nbsp; └── get_vehicle_status()<br>
+        └── <code>weather_tools</code> → FastMCP("WeatherTools")<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;├── get_weather(city)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;└── get_forecast(city, days)
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="highlight-box" style="margin-top:16px">
+  <h3>工具注册机制</h3>
+  <div class="card-body">
+    每个工具模块创建独立的 <code>FastMCP</code> 实例，使用 <code>@mcp.tool()</code> 装饰器注册工具。
+    <code>server.py</code> 在启动时 import 所有工具模块，通过遍历 <code>_tool_manager._tools</code> 将子模块工具合并到主服务器。
+    这种设计实现了<strong>工具的模块化开发与统一暴露</strong>。
+    <br><br>
+    <strong>reminder_agent</strong> 的特殊之处：不使用 MCP 工具，而是通过 <code>@tool</code> 装饰器定义内置 LangChain 工具，
+    直接操作 <code>memory_manager</code> 实现提醒的 CRUD 操作。
+  </div>
+</div>
+</div>
+
+<!-- ============== TAB 5: 记忆系统 ============== -->
+<div id="tab-memory" class="tab-panel">
+<h2>记忆系统架构</h2>
+<p style="color:var(--muted);margin-bottom:16px">双层记忆：短期对话 + 长期偏好，通过 MemoryManager 统一对外暴露</p>
+
+<div class="mem-grid">
+  <div>
+    <h3>⏱️ 短期记忆 (Short-Term)</h3>
+    <div class="card c-yellow">
+      <div class="card-title"><div class="icon">💬</div> MemorySaver</div>
+      <div class="card-body">
+        <strong>实现</strong>: <code>langgraph.checkpoint.memory.MemorySaver</code><br>
+        <strong>存储</strong>: 内存（进程内）<br>
+        <strong>机制</strong>: LangGraph checkpointer<br>
+        <strong>作用</strong>: 多轮对话状态持久化<br>
+        <strong>会话隔离</strong>: 通过 <code>thread_id</code> 区分<br>
+        <strong>特性</strong>: 支持状态时间旅行调试<br><br>
+        <strong>生产替换</strong>:<br>
+        → <code>PostgresSaver</code> (PostgreSQL)<br>
+        → <code>RedisSaver</code> (Redis)
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3>🧬 长期记忆 (Long-Term)</h3>
+    <div class="card c-yellow">
+      <div class="card-title"><div class="icon">🔍</div> 向量记忆 · ChromaDB</div>
+      <div class="card-body">
+        <strong>用途</strong>: 用户偏好语义存储与召回<br>
+        <strong>嵌入模型</strong>: <code>text-embedding-v3</code> (百炼平台)<br>
+        <strong>持久化</strong>: <code>./data/chroma</code><br>
+        <strong>集合</strong>: <code>user_preferences</code><br><br>
+        <strong>写入</strong>: <code>save_preference()</code> → 生成 embedding → ChromaDB add<br>
+        <strong>召回</strong>: <code>recall_preferences()</code> → query embedding → top-3 相似<br>
+        <strong>元数据</strong>: user_id + category 过滤
+      </div>
+    </div>
+    <div class="card c-yellow" style="margin-top:12px">
+      <div class="card-title"><div class="icon">📋</div> 结构化记忆 · SQLite</div>
+      <div class="card-body">
+        <strong>数据库</strong>: <code>./data/memory.db</code><br><br>
+        <strong>user_profiles 表</strong>:<br>
+        user_id (PK) | profile (JSON) | updated_at<br>
+        → <code>get_profile()</code> / <code>update_profile()</code><br><br>
+        <strong>reminders 表</strong>:<br>
+        id (PK) | user_id | content | remind_at | is_done | created_at<br>
+        → <code>add_reminder()</code> / <code>get_reminders()</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="highlight-box">
+  <h3>MemoryManager 统一接口</h3>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 10px;">
+    <div class="card-body">
+      <strong style="color:var(--yellow)">get_context(user_id, query)</strong><br>
+      ① recall_preferences(user_id, query) → 语义召回<br>
+      ② get_profile(user_id) → 结构化档案<br>
+      ③ get_reminders(user_id) → 待处理提醒<br>
+      → 合并为上下文 dict 注入 Supervisor prompt
+    </div>
+    <div class="card-body">
+      <strong style="color:var(--yellow)">update_profile(user_id, updates)</strong><br>
+      ① SQLite: INSERT OR UPDATE user_profiles<br>
+      ② ChromaDB: 每条更新 → save_preference()<br>
+      → 双写保证一致性
+    </div>
+    <div class="card-body">
+      <strong style="color:var(--yellow)">add_reminder(user_id, content, remind_at)</strong><br>
+      ① 生成 UUID 短 ID<br>
+      ② SQLite INSERT INTO reminders<br>
+      → 返回 reminder_id
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============== TAB 6: 端到端时序 ============== -->
+<div id="tab-sequence" class="tab-panel">
+<h2>端到端请求时序</h2>
+<p style="color:var(--muted);margin-bottom:16px">完整的消息处理生命周期，从用户输入到回复渲染</p>
+
+<table class="seq-table">
+  <tr>
+    <th style="width:40px">#</th>
+    <th style="width:80px">层级</th>
+    <th>动作</th>
+    <th>代码位置</th>
+    <th>说明</th>
+  </tr>
+  <tr><td>1</td><td><span class="badge badge-fe">前端</span></td><td>用户在 CopilotPopup 输入消息</td><td>App.tsx → CopilotPopup</td><td>用户触发对话</td></tr>
+  <tr><td>2</td><td><span class="badge badge-fe">前端</span></td><td>HttpAgent 封装 AG-UI RunAgentInput</td><td>App.tsx → HttpAgent</td><td>消息 + thread_id 打包</td></tr>
+  <tr><td>3</td><td><span class="badge badge-fe">前端</span></td><td>POST /agent SSE 请求</td><td>vite.config.ts proxy</td><td>通过 Vite 代理转发到 :8001</td></tr>
+  <tr><td>4</td><td><span class="badge badge-be">后端</span></td><td>LangGraphAgent 接收并解析</td><td>main.py → add_langgraph_fastapi_endpoint</td><td>AG-UI 协议解码</td></tr>
+  <tr><td>5</td><td><span class="badge badge-be">后端</span></td><td>构建 state (messages + thread_id)</td><td>supervisor.py → AutoMindState</td><td>注入对话上下文</td></tr>
+  <tr><td>6</td><td><span class="badge badge-mem">记忆</span></td><td>_build_prompt() 动态构建提示词</td><td>supervisor.py → _build_prompt</td><td>注入记忆上下文</td></tr>
+  <tr><td>7</td><td><span class="badge badge-mem">记忆</span></td><td>memory_manager.get_context()</td><td>memory/manager.py</td><td>偏好召回 + 档案 + 提醒</td></tr>
+  <tr><td>8</td><td><span class="badge badge-agent">Agent</span></td><td>Supervisor LLM 意图识别</td><td>supervisor.py → create_supervisor</td><td>LLM 输出 transfer_to_xxx</td></tr>
+  <tr><td>9</td><td><span class="badge badge-agent">Agent</span></td><td>路由到子Agent (如 navigation_agent)</td><td>langgraph-supervisor 内部</td><td>ReAct 循环开始</td></tr>
+  <tr><td>10</td><td><span class="badge badge-agent">Agent</span></td><td>子Agent LLM 分析并选择工具</td><td>agents/navigation_agent.py</td><td>create_react_agent 决策</td></tr>
+  <tr><td>11</td><td><span class="badge badge-mcp">MCP</span></td><td>调用 MCP 工具 (如 plan_route)</td><td>mcp/tools/navigation_tools.py</td><td>FastMCP 执行工具函数</td></tr>
+  <tr><td>12</td><td><span class="badge badge-mcp">MCP</span></td><td>工具返回结果</td><td>mcp/tools/navigation_tools.py</td><td>模拟数据 / 真实 API</td></tr>
+  <tr><td>13</td><td><span class="badge badge-agent">Agent</span></td><td>子Agent 基于工具结果生成回复</td><td>agents/navigation_agent.py</td><td>LLM 生成自然语言</td></tr>
+  <tr><td>14</td><td><span class="badge badge-agent">Agent</span></td><td>返回 Supervisor</td><td>langgraph-supervisor 内部</td><td>子Agent → Supervisor</td></tr>
+  <tr><td>15</td><td><span class="badge badge-agent">Agent</span></td><td>Supervisor 汇总最终回复</td><td>supervisor.py</td><td>可能继续委派或结束</td></tr>
+  <tr><td>16</td><td><span class="badge badge-obs">观测</span></td><td>LangFuse CallbackHandler 记录 trace</td><td>utils/observability.py</td><td>自动追踪全链路</td></tr>
+  <tr><td>17</td><td><span class="badge badge-be">后端</span></td><td>MemorySaver 保存 checkpoint</td><td>graph/supervisor.py</td><td>持久化对话状态</td></tr>
+  <tr><td>18</td><td><span class="badge badge-be">后端</span></td><td>AG-UI SSE 流式推送</td><td>main.py → LangGraphAgent</td><td>token 级别流式输出</td></tr>
+  <tr><td>19</td><td><span class="badge badge-fe">前端</span></td><td>CopilotKit 渲染消息气泡</td><td>App.tsx → CopilotPopup</td><td>实时显示回复</td></tr>
+</table>
+
+<div class="highlight-box">
+  <h3>可观测性追踪覆盖</h3>
+  <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:10px;">
+    <div class="card-body" style="text-align:center">
+      <strong style="color:var(--orange)">LLM 调用</strong><br>
+      prompt / completion<br>token 消耗 / 延迟
+    </div>
+    <div class="card-body" style="text-align:center">
+      <strong style="color:var(--orange)">工具调用</strong><br>
+      工具名 / 输入参数<br>输出结果 / 耗时
+    </div>
+    <div class="card-body" style="text-align:center">
+      <strong style="color:var(--orange)">Agent 路由</strong><br>
+      transfer_to_xxx<br>路由决策链
+    </div>
+    <div class="card-body" style="text-align:center">
+      <strong style="color:var(--orange)">节点执行</strong><br>
+      每步 state 变化<br>完整 trace 树状图
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============== TAB 7: 代码结构 ============== -->
+<div id="tab-files" class="tab-panel">
+<h2>代码目录结构</h2>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+  <div>
+    <h3>📦 backend/ — Python 后端</h3>
+    <div class="file-tree">
+<span class="dir">vehicle-agent/backend/</span>
+├── <span class="dir">app/</span>
+│   ├── <span class="file">main.py</span>            <span class="comment"># FastAPI 入口 + AG-UI SSE 注册</span>
+│   ├── <span class="file">config.py</span>          <span class="comment"># 全局配置（环境变量）</span>
+│   │
+│   ├── <span class="dir">graph/</span>              <span class="comment"># LangGraph 编排核心</span>
+│   │   ├── <span class="file">supervisor.py</span>  <span class="comment"># Supervisor 多Agent编排</span>
+│   │   ├── <span class="file">routing.py</span>     <span class="comment"># 意图路由 + Agent映射</span>
+│   │   └── <span class="file">state.py</span>       <span class="comment"># AutoMindState 状态定义</span>
+│   │
+│   ├── <span class="dir">agents/</span>             <span class="comment"># 5个专业知识Agent</span>
+│   │   ├── <span class="file">navigation_agent.py</span> <span class="comment"># 导航专家</span>
+│   │   ├── <span class="file">media_agent.py</span>      <span class="comment"># 多媒体专家</span>
+│   │   ├── <span class="file">vehicle_agent.py</span>    <span class="comment"># 车辆控制专家</span>
+│   │   ├── <span class="file">weather_agent.py</span>    <span class="comment"># 天气助手</span>
+│   │   └── <span class="file">reminder_agent.py</span>   <span class="comment"># 提醒助手（含内置工具）</span>
+│   │
+│   ├── <span class="dir">mcp/</span>                <span class="comment"># MCP 工具体系</span>
+│   │   ├── <span class="file">server.py</span>      <span class="comment"># FastMCP 聚合服务器</span>
+│   │   ├── <span class="file">client.py</span>      <span class="comment"># MCP Client → LangChain 桥接</span>
+│   │   └── <span class="dir">tools/</span>         <span class="comment"># 模块化工具集</span>
+│   │       ├── <span class="file">navigation_tools.py</span> <span class="comment"># 路线/POI/路况</span>
+│   │       ├── <span class="file">media_tools.py</span>      <span class="comment"># 播放器控制</span>
+│   │       ├── <span class="file">vehicle_tools.py</span>    <span class="comment"># 车辆硬件控制</span>
+│   │       └── <span class="file">weather_tools.py</span>    <span class="comment"># 天气查询</span>
+│   │
+│   ├── <span class="dir">memory/</span>             <span class="comment"># 双层记忆系统</span>
+│   │   ├── <span class="file">manager.py</span>     <span class="comment"># MemoryManager 统一入口</span>
+│   │   ├── <span class="file">short_term.py</span>  <span class="comment"># MemorySaver (对话状态)</span>
+│   │   └── <span class="file">long_term.py</span>   <span class="comment"># ChromaDB + SQLite (偏好/档案)</span>
+│   │
+│   ├── <span class="dir">models/</span>             <span class="comment"># 模型层</span>
+│   │   └── <span class="file">llm.py</span>         <span class="comment"># ChatOpenAI 工厂 (百炼平台)</span>
+│   │
+│   └── <span class="dir">utils/</span>              <span class="comment"># 工具</span>
+│       └── <span class="file">observability.py</span> <span class="comment"># LangFuse V4 集成</span>
+│
+├── <span class="dir">data/</span>
+│   ├── <span class="dir">chroma/</span>              <span class="comment"># ChromaDB 向量持久化</span>
+│   └── <span class="file">memory.db</span>            <span class="comment"># SQLite 结构化记忆</span>
+│
+├── <span class="file">langgraph.json</span>          <span class="comment"># LangGraph Studio 配置</span>
+├── <span class="file">requirements.txt</span>        <span class="comment"># Python 依赖</span>
+├── <span class="file">Dockerfile</span>              <span class="comment"># 容器化部署</span>
+└── <span class="file">.env</span>                    <span class="comment"># 环境变量配置</span>
+    </div>
+  </div>
+
+  <div>
+    <h3>📦 frontend/ — React 前端</h3>
+    <div class="file-tree">
+<span class="dir">vehicle-agent/frontend/</span>
+├── <span class="dir">src/</span>
+│   ├── <span class="file">App.tsx</span>             <span class="comment"># 根组件 + CopilotKit + HttpAgent</span>
+│   ├── <span class="file">main.tsx</span>            <span class="comment"># React 入口</span>
+│   ├── <span class="file">index.css</span>           <span class="comment"># 全局样式 (Tailwind)</span>
+│   │
+│   └── <span class="dir">components/</span>         <span class="comment"># UI 组件</span>
+│       ├── <span class="file">VehicleDashboard.tsx</span>  <span class="comment"># 仪表盘主布局</span>
+│       ├── <span class="file">NavigationCard.tsx</span>    <span class="comment"># 导航面板卡片</span>
+│       ├── <span class="file">MediaCard.tsx</span>         <span class="comment"># 音乐播放器卡片</span>
+│       ├── <span class="file">VehicleControlCard.tsx</span> <span class="comment"># 车辆控制卡片</span>
+│       └── <span class="file">WeatherCard.tsx</span>       <span class="comment"># 天气信息卡片</span>
+│
+├── <span class="file">vite.config.ts</span>          <span class="comment"># Vite 配置 + 代理</span>
+├── <span class="file">package.json</span>            <span class="comment"># npm 依赖</span>
+├── <span class="file">tsconfig.json</span>           <span class="comment"># TypeScript 配置</span>
+├── <span class="file">Dockerfile</span>              <span class="comment"># 容器化部署</span>
+├── <span class="file">nginx.conf</span>              <span class="comment"># Nginx 反向代理</span>
+└── <span class="file">index.html</span>              <span class="comment"># HTML 入口</span>
+    </div>
+
+    <h3 style="margin-top:24px">🔧 关键配置项 (.env)</h3>
+    <div class="file-tree">
+<span class="comment"># 服务配置</span>
+PORT=8001
+CORS_ORIGINS=*
+
+<span class="comment"># LLM (百炼平台)</span>
+LLM_API_KEY=sk-xxx
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=deepseek-v3
+
+<span class="comment"># MCP Server</span>
+MCP_TRANSPORT=stdio           <span class="comment"># stdio | sse</span>
+MCP_SERVER_URL=http://localhost:8765
+
+<span class="comment"># 记忆系统</span>
+MEMORY_ENABLED=true
+CHROMA_PERSIST_DIR=./data/chroma
+SQLITE_DB_PATH=./data/memory.db
+EMBEDDING_MODEL=text-embedding-v3
+
+<span class="comment"># LangFuse 可观测性</span>
+LANGFUSE_PUBLIC_KEY=pk-xxx
+LANGFUSE_SECRET_KEY=sk-xxx
+LANGFUSE_BASE_URL=http://localhost:3000
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">🔗 核心依赖关系</h3>
+<div style="display:grid; grid-template-columns: repeat(3,1fr); gap:12px;">
+  <div class="card c-purple">
+    <div class="card-title">后端核心</div>
+    <div class="card-body">
+      <code>fastapi</code> Web框架<br>
+      <code>langgraph</code> Agent编排<br>
+      <code>langgraph-supervisor</code> Supervisor<br>
+      <code>langchain-openai</code> LLM集成<br>
+      <code>langchain-mcp-adapters</code> MCP桥接<br>
+      <code>ag-ui-langgraph</code> AG-UI协议<br>
+      <code>copilotkit</code> 前后端协议
+    </div>
+  </div>
+  <div class="card c-green">
+    <div class="card-title">工具 & 记忆</div>
+    <div class="card-body">
+      <code>mcp[cli]</code> FastMCP 框架<br>
+      <code>chromadb</code> 向量数据库<br>
+      <code>sqlite3</code> 结构化存储 (内置)<br>
+      <code>langchain-openai</code> Embedding
+    </div>
+  </div>
+  <div class="card c-pink">
+    <div class="card-title">前端</div>
+    <div class="card-body">
+      <code>react</code> UI框架<br>
+      <code>@copilotkit/react-core</code> 核心<br>
+      <code>@copilotkit/react-ui</code> 聊天UI<br>
+      <code>@ag-ui/client</code> AG-UI客户端<br>
+      <code>tailwindcss</code> 样式<br>
+      <code>vite</code> 构建工具
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('tab-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+</script>
+</body>
+</html>
