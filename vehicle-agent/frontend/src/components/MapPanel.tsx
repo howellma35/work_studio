@@ -11,7 +11,7 @@ export interface RouteInfo {
 }
 
 export interface MapState {
-  /** 当前位置 [lat, lng] */
+  /** 当前位置 [lat, lng] — 内部格式始终用 lat,lng */
   currentPosition: [number, number];
   /** 起点坐标 */
   origin?: [number, number];
@@ -21,7 +21,7 @@ export interface MapState {
   destination?: [number, number];
   /** 目的地名称 */
   destinationName?: string;
-  /** 路线坐标序列 (lat,lng 格式) */
+  /** 路线坐标序列 [lat, lng] */
   routeCoords: [number, number][];
   /** 路线信息 */
   routeInfo: RouteInfo | null;
@@ -30,13 +30,13 @@ export interface MapState {
 }
 
 export const DEFAULT_MAP_STATE: MapState = {
-  currentPosition: [31.2304, 121.4737], // 上海人民广场
+  currentPosition: [31.2304, 121.4737],
   routeCoords: [],
   routeInfo: null,
   pois: [],
 };
 
-/* ============ 目的地 → 坐标映射（预设常用地点） ============ */
+/* ============ 目的地 → 坐标映射 ============ */
 const DEST_COORDS: Record<string, [number, number]> = {
   公司: [31.2397, 121.4998],
   陆家嘴: [31.2363, 121.5055],
@@ -55,7 +55,7 @@ const DEST_COORDS: Record<string, [number, number]> = {
   医院: [31.22, 121.465],
 };
 
-/** 根据地名解析坐标，未知地名在当前位置附近随机偏移 */
+/** 地名 → [lat, lng] 坐标 */
 export function resolveDestination(
   name: string,
   current: [number, number],
@@ -69,7 +69,7 @@ export function resolveDestination(
   ];
 }
 
-/** 在两点之间生成折线路径（fallback，当没有真实路线坐标时使用） */
+/** 两点间折线路径 [lat, lng] */
 export function generateRouteCoords(
   origin: [number, number],
   dest: [number, number],
@@ -87,6 +87,17 @@ export function generateRouteCoords(
   return pts;
 }
 
+/* ==================== 坐标转换工具 ==================== */
+/** [lat, lng] → 高德 AMap.LngLat (高德用 lng,lat 顺序) */
+function toLngLat(coord: [number, number], AMap: any): any {
+  return new AMap.LngLat(coord[1], coord[0]);
+}
+
+/** [lat, lng] → 高德数组格式 [lng, lat] */
+function toAmapArray(coord: [number, number]): [number, number] {
+  return [coord[1], coord[0]];
+}
+
 /* ==================== 主组件 ==================== */
 interface MapPanelProps {
   mapState: MapState;
@@ -98,10 +109,11 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const drivingRef = useRef<any>(null);
+  const AMapRef = useRef<any>(null); // 缓存 AMap 全局对象
   const markersRef = useRef<any[]>([]);
   const polylineRef = useRef<any>(null);
   const poiMarkersRef = useRef<any[]>([]);
-  const initAttemptRef = useRef(0); // 追踪初始化尝试次数
+  const initKeyRef = useRef(""); // 记录上次初始化用的key，防止重复初始化
 
   const {
     currentPosition,
@@ -117,15 +129,10 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
   // 初始化高德地图 — 当 amapKey 变化时重新初始化
   useEffect(() => {
     if (!containerRef.current) return;
-    if (!amapKey || amapKey === "your-amap-js-key-here" || amapKey === "your-amap-api-key") {
-      console.warn("高德地图Key未配置，跳过地图初始化");
-      return;
-    }
+    if (!amapKey || amapKey.startsWith("your-amap")) return;
 
-    // 防止重复初始化（同一个Key不重新加载）
-    if (mapRef.current && initAttemptRef.current > 0) {
-      return;
-    }
+    // 防止同一个Key重复初始化
+    if (initKeyRef.current === amapKey && mapRef.current) return;
 
     // 设置安全密钥（必须在 AMapLoader.load 之前）
     if (amapSecret) {
@@ -134,7 +141,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       };
     }
 
-    // 销毁旧地图实例（如果存在）
+    // 销毁旧地图
     if (mapRef.current) {
       mapRef.current.destroy();
       mapRef.current = null;
@@ -144,31 +151,28 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       polylineRef.current = null;
     }
 
-    initAttemptRef.current += 1;
-
     AMapLoader.load({
       key: amapKey,
       version: "2.0",
       plugins: ["AMap.Driving", "AMap.Geocoder"],
     }).then((AMap: any) => {
-      if (!containerRef.current) return; // 组件可能已卸载
+      if (!containerRef.current) return;
 
+      AMapRef.current = AMap;
+      initKeyRef.current = amapKey;
+
+      // 高德 center 用 [lng, lat] 格式
       const map = new AMap.Map(containerRef.current, {
         zoom: 14,
-        center: currentPosition,
+        center: toAmapArray(currentPosition),
         viewMode: "3D",
       });
       mapRef.current = map;
 
-      // 添加当前位置标记（蓝色脉冲点）
+      // 当前位置标记（蓝色脉冲点） — position 用 [lng, lat]
       const currentMarker = new AMap.Marker({
-        position: currentPosition,
-        content: `<div style="
-          width:20px;height:20px;border-radius:50%;
-          background:linear-gradient(135deg,#3b82f6,#06b6d4);
-          border:3px solid #fff;
-          box-shadow:0 0 12px rgba(59,130,246,0.6);
-        "></div>`,
+        position: toAmapArray(currentPosition),
+        content: `<div style="width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#06b6d4);border:3px solid #fff;box-shadow:0 0 12px rgba(59,130,246,0.6);"></div>`,
         offset: new AMap.Pixel(-10, -10),
       });
       currentMarker.setMap(map);
@@ -182,59 +186,51 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       });
       drivingRef.current = driving;
 
-      console.log("高德地图初始化成功");
+      console.log("高德地图初始化成功, Key:", amapKey);
     }).catch((e: Error) => {
       console.error("高德地图加载失败:", e);
-      initAttemptRef.current = 0; // 重置，允许重试
     });
-  }, [amapKey, amapSecret]); // Key变化时重新初始化
+  }, [amapKey, amapSecret]);
 
-  // 清理地图实例
+  // 清理
   useEffect(() => {
     return () => {
       if (mapRef.current) {
         mapRef.current.destroy();
-        mapRef.current = null;
       }
     };
   }, []);
 
-  // 更新地图视图中心和标记（仅当地图已初始化）
+  // 更新地图标记和路线（仅当地图已初始化）
   useEffect(() => {
     const map = mapRef.current;
-    const AMap = (window as any).AMap;
+    const AMap = AMapRef.current;
     if (!map || !AMap) return;
 
-    // 清除旧标记（保留当前位置标记 - index 0）
+    // 清除旧覆盖物（保留当前位置标记 index 0）
     while (markersRef.current.length > 1) {
       const m = markersRef.current.pop();
       m.setMap(null);
     }
-    // 清除旧的POI标记
     poiMarkersRef.current.forEach(m => m.setMap(null));
     poiMarkersRef.current = [];
-    // 清除旧折线
     if (polylineRef.current) {
       polylineRef.current.setMap(null);
       polylineRef.current = null;
     }
-    // 清除 Driving 结果
     if (drivingRef.current) {
       drivingRef.current.clear();
     }
 
+    // 视角中心 — 用 [lng, lat] 格式
     const centerTarget = destination || origin || currentPosition;
-    map.setCenter(centerTarget);
+    map.setCenter(toAmapArray(centerTarget));
 
     // 起点标记（绿色）
     if (origin) {
       const originMarker = new AMap.Marker({
-        position: origin,
-        content: `<div style="
-          width:14px;height:14px;border-radius:50%;
-          background:#22c55e;border:3px solid #fff;
-          box-shadow:0 0 8px rgba(34,197,94,0.5);
-        "></div>`,
+        position: toAmapArray(origin),
+        content: `<div style="width:14px;height:14px;border-radius:50%;background:#22c55e;border:3px solid #fff;box-shadow:0 0 8px rgba(34,197,94,0.5);"></div>`,
         offset: new AMap.Pixel(-7, -7),
         label: {
           content: originName || "起点",
@@ -249,12 +245,8 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
     // 目的地标记（红色）
     if (destination) {
       const destMarker = new AMap.Marker({
-        position: destination,
-        content: `<div style="
-          width:14px;height:14px;border-radius:50%;
-          background:#ef4444;border:3px solid #fff;
-          box-shadow:0 0 8px rgba(239,68,68,0.5);
-        "></div>`,
+        position: toAmapArray(destination),
+        content: `<div style="width:14px;height:14px;border-radius:50%;background:#ef4444;border:3px solid #fff;box-shadow:0 0 8px rgba(239,68,68,0.5);"></div>`,
         offset: new AMap.Pixel(-7, -7),
         label: {
           content: destinationName || "目的地",
@@ -268,18 +260,18 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
 
     // 路线渲染
     if (routeCoords.length > 1) {
-      // 如果有起终点，优先用 Driving 插件规划真实路线
+      // 有起终点时优先用 Driving 插件规划真实路线
       if (origin && destination && drivingRef.current) {
         drivingRef.current.search(
-          new AMap.LngLat(origin[1], origin[0]),
-          new AMap.LngLat(destination[1], destination[0]),
+          toLngLat(origin, AMap),      // 高德用 lng,lat
+          toLngLat(destination, AMap),
           (status: string, result: any) => {
             if (status === "complete" && result.routes && result.routes.length > 0) {
-              // Driving 已自动在地图上绘制路线
+              // Driving 自动绘制路线
             } else {
-              // Driving 失败，用手动折线
+              // fallback 手动折线 — path 用 AMap.LngLat
               const polyline = new AMap.Polyline({
-                path: routeCoords.map((c: [number, number]) => new AMap.LngLat(c[1], c[0])),
+                path: routeCoords.map((c) => toLngLat(c, AMap)),
                 strokeColor: "#3b82f6",
                 strokeWeight: 5,
                 strokeOpacity: 0.85,
@@ -290,9 +282,9 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
           },
         );
       } else {
-        // 无起终点或无 Driving，用手动折线
+        // 手动折线
         const polyline = new AMap.Polyline({
-          path: routeCoords.map((c: [number, number]) => new AMap.LngLat(c[1], c[0])),
+          path: routeCoords.map((c) => toLngLat(c, AMap)),
           strokeColor: "#3b82f6",
           strokeWeight: 5,
           strokeOpacity: 0.85,
@@ -302,15 +294,11 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       }
     }
 
-    // POI 标记（橙色）
-    pois.forEach((p: { name: string; lat: number; lng: number }) => {
+    // POI 标记（橙色） — position 用 [lng, lat]
+    pois.forEach((p) => {
       const poiMarker = new AMap.Marker({
-        position: [p.lat, p.lng],
-        content: `<div style="
-          width:10px;height:10px;border-radius:50%;
-          background:#f59e0b;border:2px solid #fff;
-          box-shadow:0 0 6px rgba(245,158,11,0.5);
-        "></div>`,
+        position: [p.lng, p.lat],  // POI数据本身就是 lat,lng，转成 lng,lat
+        content: `<div style="width:10px;height:10px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 6px rgba(245,158,11,0.5);"></div>`,
         offset: new AMap.Pixel(-5, -5),
         label: {
           content: p.name,
@@ -334,7 +322,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       <div ref={containerRef} className="h-full w-full" />
 
       {/* Key 未配置时的提示 */}
-      {!amapKey || amapKey === "your-amap-js-key-here" ? (
+      {!amapKey || amapKey.startsWith("your-amap") ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
           <div className="glass-card p-6 text-center">
             <p className="text-sm text-slate-400">地图正在加载...</p>
@@ -358,10 +346,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
             </div>
             <div className="space-y-1">
               {routeInfo.steps.map((s: string, i: number) => (
-                <p
-                  key={i}
-                  className="flex items-start gap-2 text-xs text-slate-400"
-                >
+                <p key={i} className="flex items-start gap-2 text-xs text-slate-400">
                   <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
                   {s}
                 </p>

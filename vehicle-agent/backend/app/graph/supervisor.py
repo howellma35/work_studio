@@ -112,9 +112,12 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
     tools = await load_mcp_tools()
     logger.info(f"[初始化] MCP 工具 ({len(tools)} 个): {[t.name for t in tools]}")
 
-    # 2. 前端工具（update_map, select_origin）通过 useFrontendTool 在前端注册
-    #    AG-UI 协议自动将前端工具定义注入到 LLM 上下文，不需要后端 stub
-    #    如果请求时传入了额外的前端工具，合并到总工具列表
+    # 2. 前端工具（update_map, select_origin）通过 CopilotKitMiddleware 注入到 navigation_agent
+    #    CopilotKitMiddleware 自动将前端注册的工具转发给子 Agent
+    #    不需要在后端手动添加 stub
+    logger.info("[初始化] 前端工具将通过 CopilotKitMiddleware 注入到 navigation_agent")
+
+    # 3. 如果请求时传入了额外前端工具，合并（去重）
     if frontend_tools:
         logger.info(f"[初始化] 请求时额外前端工具 ({len(frontend_tools)} 个): {[t.name if hasattr(t,'name') else t.get('name','?') for t in frontend_tools]}")
         existing_names = {t.name for t in tools}
@@ -123,9 +126,9 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
             if ft_name not in existing_names:
                 tools.append(ft)
     else:
-        logger.info("[初始化] 前端工具将通过 AG-UI 协议在运行时注入")
+        logger.info("[初始化] 无额外前端工具传入")
 
-    logger.info(f"[初始化] 最终 MCP 工具列表 ({len(tools)} 个): {[t.name for t in tools]}")
+    logger.info(f"[初始化] 最终工具列表 ({len(tools)} 个): {[t.name for t in tools]}")
 
     # 4. 创建子Agent
     agents = [

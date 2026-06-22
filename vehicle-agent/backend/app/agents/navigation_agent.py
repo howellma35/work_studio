@@ -2,11 +2,14 @@
 导航子Agent
 负责路径规划、POI搜索、路况查询、ETA预估
 
-注意：update_map 和 select_origin 是前端工具，通过 useFrontendTool 在前端注册，
-AG-UI 协议会自动将前端工具定义注入到 LLM 的上下文中，不需要在后端定义 stub。
+前端工具(update_map, select_origin)通过 CopilotKitMiddleware 自动注入到 Agent 的工具列表中，
+前端 useFrontendTool / useHumanInTheLoop 注册的工具定义会通过 AG-UI 协议传到后端，
+CopilotKitMiddleware 将它们转发给子 Agent，让 LLM 能看到并调用这些前端工具。
+当 Agent 调用前端工具时，AG-UI 协议路由到前端 handler 执行，结果返回给 LLM 继续对话。
 """
 from langchain_core.tools import BaseTool
 from langchain.agents import create_agent
+from copilotkit import CopilotKitMiddleware
 
 from app.models.llm import create_llm
 
@@ -37,20 +40,19 @@ NAVIGATION_PROMPT = """\
 
 
 def create_navigation_agent(tools: list[BaseTool]):
-    """创建导航子Agent，绑定导航相关 MCP 工具
-
-    注意：update_map 和 select_origin 是前端工具（useFrontendTool 注册），
-    AG-UI 协议会自动将前端工具定义注入到 LLM 上下文，不需要在后端添加 stub。
-    """
+    """创建导航子Agent，绑定导航 MCP 工具 + CopilotKitMiddleware 注入前端工具"""
     navigation_keywords = ["plan_route", "search_poi", "traffic"]
     navigation_tools = [
         t for t in tools
         if any(kw in t.name for kw in navigation_keywords)
     ]
 
+    # CopilotKitMiddleware 会自动将前端注册的工具（useFrontendTool / useHumanInTheLoop）
+    # 注入到 Agent 的工具列表中，不需要后端手动添加 stub
     return create_agent(
         model=create_llm(),
         tools=navigation_tools,
         name="navigation_agent",
         system_prompt=NAVIGATION_PROMPT,
+        middleware=[CopilotKitMiddleware()],
     )

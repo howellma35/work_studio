@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface OriginSelectorProps {
   options: string[];
@@ -24,9 +25,16 @@ const OPTION_COLORS: Record<string, string> = {
 export default function OriginSelector({ options, message, onSelect, onCancel }: OriginSelectorProps) {
   const [hovered, setHovered] = useState<string | null>(null);
 
-  return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="glass-card w-[360px] p-6 animate-in fade-in zoom-in duration-200">
+  // 用 Portal 渲染到 body，避免 CopilotSidebar 内部 DOM 结构干扰
+  const portalContent = (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={(e) => {
+        // 点击背景区域（非卡片内容）触发取消
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className="glass-card w-[360px] p-6" onClick={(e) => e.stopPropagation()}>
         {/* 标题 */}
         <div className="mb-4 flex items-center gap-2">
           <span className="text-xl">🧭</span>
@@ -38,7 +46,7 @@ export default function OriginSelector({ options, message, onSelect, onCancel }:
           {options.map((opt) => (
             <button
               key={opt}
-              className={`flex items-center gap-3 rounded-xl p-4 text-left transition-all duration-200 ${
+              className={`flex items-center gap-3 rounded-xl p-4 text-left transition-all duration-200 cursor-pointer ${
                 hovered === opt
                   ? "scale-105 border-slate-500 bg-slate-700/70 shadow-lg"
                   : "border-slate-700/50 bg-slate-800/50 hover:bg-slate-700/70"
@@ -59,7 +67,7 @@ export default function OriginSelector({ options, message, onSelect, onCancel }:
 
         {/* 取消按钮 */}
         <button
-          className="w-full rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-2 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300 transition-colors"
+          className="w-full rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-2 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300 transition-colors cursor-pointer"
           onClick={onCancel}
         >
           取消选择（使用当前位置）
@@ -67,4 +75,6 @@ export default function OriginSelector({ options, message, onSelect, onCancel }:
       </div>
     </div>
   );
+
+  return createPortal(portalContent, document.body);
 }
