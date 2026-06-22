@@ -11,7 +11,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -62,8 +62,6 @@ async def lifespan(app: FastAPI):
     from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
 
     # 将 Langfuse CallbackHandler 注入到 Agent config
-    # 这是官方标准方案: https://langfuse.com/docs/integrations/langchain/tracing
-    # CallbackHandler 通过 LangChain 回调机制自动追踪所有 LLM/工具/Agent 调用
     langfuse_handler = get_langfuse_handler()
     agent_config = {}
     if langfuse_handler:
@@ -105,6 +103,25 @@ app.add_middleware(
 )
 
 
+# ===== 调试中间件：打印请求时前端传来的 tools =====
+@app.middleware("http")
+async def debug_tools_middleware(request: Request, call_next):
+    """拦截 /agent 请求，打印前端传来的 tools 列表"""
+    if request.url.path == "/agent" and request.method == "POST":
+        body = await request.body()
+        try:
+            import json
+            data = json.loads(body)
+            tools = data.get("tools", [])
+            if tools:
+                logger.info(f"[请求时] 前端传来 {len(tools)} 个 tools: {[t.get('name', '?') for t in tools]}")
+            else:
+                logger.warning("[请求时] 前端没有传 tools（空列表或无此字段）")
+        except Exception as e:
+            logger.error(f"[请求时] 解析请求体失败: {e}")
+    return await call_next(request)
+
+
 # ===== REST API 端点 =====
 @app.get("/api/vehicle/health")
 async def health():
@@ -123,7 +140,7 @@ async def agent_info():
     return {
         "agent_name": "AutoMind",
         "sub_agents": [
-            {"name": "navigation_agent", "desc": "导航专家", "tools": ["plan_route", "search_poi", "get_traffic_info"]},
+            {"name": "navigation_agent", "desc": "导航专家", "tools": ["plan_route", "search_poi", "get_traffic_info", "update_map", "select_origin"]},
             {"name": "media_agent", "desc": "多媒体专家", "tools": ["play_music", "pause_music", "next_song", "set_volume", "get_playlist"]},
             {"name": "vehicle_agent", "desc": "车辆控制专家", "tools": ["control_window", "set_climate", "lock_doors", "set_seat", "get_vehicle_status"]},
             {"name": "weather_agent", "desc": "天气助手", "tools": ["get_weather", "get_forecast"]},
@@ -134,6 +151,9 @@ async def agent_info():
             "mcp": "Model Context Protocol (FastMCP)",
             "observability": "LangFuse",
         },
+        # 高德地图 Key（前端地图渲染需要）
+        "amap_js_key": settings.AMAP_JS_KEY,
+        "amap_js_secret": settings.AMAP_JS_SECRET,
     }
 
 

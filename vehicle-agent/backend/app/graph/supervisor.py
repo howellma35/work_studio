@@ -83,7 +83,7 @@ def _build_prompt(state: dict) -> list:
     return [SystemMessage(content=system_content)] + list(messages)
 
 
-async def build_supervisor_graph() -> CompiledStateGraph:
+async def build_supervisor_graph(frontend_tools: list | None = None) -> CompiledStateGraph:
     """
     构建 Supervisor 多Agent编排图
 
@@ -100,6 +100,9 @@ async def build_supervisor_graph() -> CompiledStateGraph:
     每个子Agent 执行完毕后返回 Supervisor，由 Supervisor 决定
     是否需要继续委派或结束对话。
 
+    Args:
+        frontend_tools: 前端工具定义列表，初始化时传入
+
     Returns:
         编译后的 LangGraph 图，可直接传给 CopilotKit
     """
@@ -107,8 +110,24 @@ async def build_supervisor_graph() -> CompiledStateGraph:
 
     # 1. 加载 MCP 工具（异步方式）
     tools = await load_mcp_tools()
+    logger.info(f"[初始化] MCP 工具 ({len(tools)} 个): {[t.name for t in tools]}")
 
-    # 2. 创建子Agent
+    # 2. 前端工具（update_map, select_origin）通过 useFrontendTool 在前端注册
+    #    AG-UI 协议自动将前端工具定义注入到 LLM 上下文，不需要后端 stub
+    #    如果请求时传入了额外的前端工具，合并到总工具列表
+    if frontend_tools:
+        logger.info(f"[初始化] 请求时额外前端工具 ({len(frontend_tools)} 个): {[t.name if hasattr(t,'name') else t.get('name','?') for t in frontend_tools]}")
+        existing_names = {t.name for t in tools}
+        for ft in frontend_tools:
+            ft_name = ft.name if hasattr(ft, 'name') else ft.get('name', '?')
+            if ft_name not in existing_names:
+                tools.append(ft)
+    else:
+        logger.info("[初始化] 前端工具将通过 AG-UI 协议在运行时注入")
+
+    logger.info(f"[初始化] 最终 MCP 工具列表 ({len(tools)} 个): {[t.name for t in tools]}")
+
+    # 4. 创建子Agent
     agents = [
         create_navigation_agent(tools),
         create_media_agent(tools),
@@ -117,14 +136,14 @@ async def build_supervisor_graph() -> CompiledStateGraph:
         create_reminder_agent(),
     ]
 
-    # 3. 构建 Supervisor 编排
+    # 5. 构建 Supervisor 编排
     supervisor = create_supervisor(
         agents=agents,
         model=create_llm(temperature=0.3),
         prompt=_build_prompt,
     )
 
-    # 4. 编译图，附加 checkpointer 实现多轮对话记忆
+    # 6. 编译图，附加 checkpointer 实现多轮对话记忆
     graph = supervisor.compile(checkpointer=MemorySaver())
 
     logger.info(
@@ -139,11 +158,15 @@ _graph_instance: CompiledStateGraph | None = None
 _graph_lock = asyncio.Lock()
 
 
-async def get_graph() -> CompiledStateGraph:
-    """获取编译好的 Supervisor 图（单例，Double-Check Locking）"""
+async def get_graph(frontend_tools: list | None = None) -> CompiledStateGraph:
+    """获取编译好的 Supervisor 图（单例，Double-Check Locking）
+
+    Args:
+        frontend_tools: 前端工具定义列表，初始化时传入（启动时通常为 None）
+    """
     global _graph_instance
     if _graph_instance is None:
         async with _graph_lock:
             if _graph_instance is None:
-                _graph_instance = await build_supervisor_graph()
+                _graph_instance = await build_supervisor_graph(frontend_tools)
     return _graph_instance

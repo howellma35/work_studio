@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 @import "@copilotkit/react-ui/styles.css";
 
 :root {
@@ -52,30 +51,10 @@ body {
   background: #0a0e1a;
 }
 
-/* Leaflet 暗色地图样式 */
-.leaflet-container {
-  background: #1a2332 !important;
-}
-
-.leaflet-control-attribution {
-  background: rgba(15, 23, 42, 0.7) !important;
-  color: #64748b !important;
-  font-size: 9px !important;
-}
-
-.leaflet-control-attribution a {
-  color: #94a3b8 !important;
-}
-
-.leaflet-popup-content-wrapper {
-  background: rgba(15, 23, 42, 0.9) !important;
-  color: #e2e8f0 !important;
-  border-radius: 8px !important;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-}
-
-.leaflet-popup-tip {
-  background: rgba(15, 23, 42, 0.9) !important;
+/* 高德地图暗色样式 */
+.amap-logo,
+.amap-copyright {
+  display: none !important;
 }
 
 /* 滚动条样式 */

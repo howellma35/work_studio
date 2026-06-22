@@ -26,6 +26,12 @@ class Settings:
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8765")
     MAP_SERVICE_PROVIDER: str = os.getenv("MAP_SERVICE_PROVIDER", "amap")
 
+    # ===== 高德地图 API 配置 =====
+    AMAP_API_KEY: str = os.getenv("AMAP_API_KEY", "")
+    AMAP_JS_KEY: str = os.getenv("AMAP_JS_KEY", "")
+    AMAP_JS_SECRET: str = os.getenv("AMAP_JS_SECRET", "")  # JS API 安全密钥
+    AMAP_API_BASE: str = os.getenv("AMAP_API_BASE", "https://restapi.amap.com/v3")
+
     # ===== 记忆模块配置 =====
     MEMORY_ENABLED: bool = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
     CHROMA_PERSIST_DIR: Path = Path(os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"))

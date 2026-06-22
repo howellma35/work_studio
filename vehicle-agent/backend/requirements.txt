@@ -26,5 +26,8 @@ chromadb>=0.5.0
 # ===== 可观测性 (LangFuse V4 SDK) =====
 langfuse>=4.0.0
 
+# ===== HTTP 客户端 =====
+httpx>=0.24.0
+
 # ===== 日志 =====
 loguru>=0.7.0

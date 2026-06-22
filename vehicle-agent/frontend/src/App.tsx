@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { CopilotKit } from "@copilotkit/react-core/v2";
 import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { CopilotSidebar } from "@copilotkit/react-ui";
@@ -11,16 +11,62 @@ import MapPanel, {
   generateRouteCoords,
 } from "./components/MapPanel";
 import VehicleDashboard from "./components/VehicleDashboard";
+import OriginSelector from "./components/OriginSelector";
 import "@copilotkit/react-ui/v2/styles.css";
 
-// AG-UI 代理，直连后端 SSE 端点（通过 Vite 代理转发到 localhost:8001）
+// AG-UI 代理，直连后端 SSE 端点
 const automindAgent = new HttpAgent({ url: "/agent" });
 
-/** 内部布局组件 — 可使用 CopilotKit hooks */
+/** 内部布局组件 */
 function AppLayout() {
   const [mapState, setMapState] = useState<MapState>(DEFAULT_MAP_STATE);
+  const [amapKey, setAmapKey] = useState("");
+  const [amapSecret, setAmapSecret] = useState("");
 
-  // 注册前端工具：Agent 调用 update_map 时自动更新地图
+  // 起点选择器状态
+  const [originSelectorVisible, setOriginSelectorVisible] = useState(false);
+  const [originSelectorOptions, setOriginSelectorOptions] = useState<string[]>(["家", "公司", "火车站", "机场"]);
+  const [originSelectorMessage, setOriginSelectorMessage] = useState("请选择您的出发地点：");
+  const originResolveRef = useRef<((value: string) => void) | null>(null);
+
+  // 从后端API获取高德地图Key（同步到React state，触发MapPanel重新初始化）
+  useEffect(() => {
+    fetch("/api/vehicle/agent-info")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.amap_js_key) {
+          setAmapKey(data.amap_js_key);
+          if (data.amap_js_secret) {
+            setAmapSecret(data.amap_js_secret);
+          }
+        }
+      })
+      .catch(() => {
+        console.warn("无法从后端获取高德地图Key");
+      });
+  }, []);
+
+  // 注册前端工具：select_origin
+  useFrontendTool({
+    name: "select_origin",
+    description: "让用户选择导航起点位置。弹出选择面板，提供家、公司、火车站、机场等常见起点选项。",
+    parameters: z.object({
+      options: z.array(z.string()).describe("可选起点列表"),
+      message: z.string().describe("询问起点时展示给用户的提示文本"),
+    }),
+    handler: async (args) => {
+      const { options, message } = args;
+
+      return new Promise<string>((resolve) => {
+        originResolveRef.current = resolve;
+        setOriginSelectorOptions(options || ["家", "公司", "火车站", "机场"]);
+        setOriginSelectorMessage(message || "请选择您的出发地点：");
+        setOriginSelectorVisible(true);
+      });
+    },
+  });
+
+  // 注册前端工具：update_map
   useFrontendTool({
     name: "update_map",
     description:
@@ -29,9 +75,12 @@ function AppLayout() {
       action: z
         .enum(["navigate", "search_poi", "clear"])
         .describe("操作类型：navigate=导航, search_poi=搜索兴趣点, clear=清除路线"),
-      destination: z.string().optional().describe("目的地名称（navigate 时必填）"),
-      destination_lat: z.number().optional().describe("目的地纬度（如有精确坐标）"),
-      destination_lng: z.number().optional().describe("目的地经度（如有精确坐标）"),
+      destination: z.string().optional().describe("目的地名称"),
+      destination_lat: z.number().optional().describe("目的地纬度"),
+      destination_lng: z.number().optional().describe("目的地经度"),
+      origin: z.string().optional().describe("起点名称"),
+      origin_lat: z.number().optional().describe("起点纬度"),
+      origin_lng: z.number().optional().describe("起点经度"),
       distance_km: z.number().optional().describe("距离（公里）"),
       duration_min: z.number().optional().describe("预计时长（分钟）"),
       steps: z.array(z.string()).optional().describe("路线步骤描述列表"),
@@ -42,13 +91,15 @@ function AppLayout() {
       pois: z
         .array(z.object({ name: z.string(), lat: z.number(), lng: z.number() }))
         .optional()
-        .describe('POI 列表 [{"name": "xxx", "lat": 31.23, "lng": 121.47}, ...]'),
+        .describe("POI 列表"),
     }),
     handler: async (args) => {
       const { action } = args;
 
       if (action === "navigate") {
         const destName = args.destination || "目的地";
+        const originName = args.origin || "当前位置";
+
         let destCoord: [number, number];
         if (args.destination_lat && args.destination_lng) {
           destCoord = [args.destination_lat, args.destination_lng];
@@ -56,29 +107,40 @@ function AppLayout() {
           destCoord = resolveDestination(destName, mapState.currentPosition);
         }
 
+        let originCoord: [number, number] | undefined;
+        if (args.origin_lat && args.origin_lng) {
+          originCoord = [args.origin_lat, args.origin_lng];
+        } else if (originName !== "当前位置") {
+          originCoord = resolveDestination(originName, mapState.currentPosition);
+        }
+
         let routeCoords: [number, number][];
         if (args.route_coords) {
           routeCoords = args.route_coords.map(
             (c) => [c[0], c[1]] as [number, number],
           );
+        } else if (originCoord) {
+          routeCoords = generateRouteCoords(originCoord, destCoord);
         } else {
           routeCoords = generateRouteCoords(mapState.currentPosition, destCoord);
         }
 
         setMapState((prev) => ({
           ...prev,
+          origin: originCoord,
+          originName: originName !== "当前位置" ? originName : undefined,
           destination: destCoord,
           destinationName: destName,
           routeCoords,
           routeInfo: {
-            origin: "当前位置",
+            origin: originName,
             destination: destName,
             distanceKm: args.distance_km || 0,
             durationMin: args.duration_min || 0,
             steps: args.steps || [],
           },
         }));
-        return "地图已更新导航路线";
+        return `地图已更新导航路线: ${originName} → ${destName}`;
       }
 
       if (action === "search_poi") {
@@ -94,6 +156,8 @@ function AppLayout() {
       if (action === "clear") {
         setMapState((prev) => ({
           ...prev,
+          origin: undefined,
+          originName: undefined,
           destination: undefined,
           destinationName: undefined,
           routeCoords: [],
@@ -107,17 +171,34 @@ function AppLayout() {
     },
   });
 
+  const handleOriginSelect = useCallback((selected: string) => {
+    setOriginSelectorVisible(false);
+    if (originResolveRef.current) {
+      originResolveRef.current(selected);
+      originResolveRef.current = null;
+    }
+  }, []);
+
+  const handleOriginCancel = useCallback(() => {
+    setOriginSelectorVisible(false);
+    if (originResolveRef.current) {
+      originResolveRef.current("当前位置");
+      originResolveRef.current = null;
+    }
+  }, []);
+
   return (
     <CopilotSidebar
       defaultOpen
       instructions={`你是 AutoMind 车机助手。你可以帮用户导航、播放音乐、控制车辆、查天气等。
 
 重要规则：
-- 当调用 plan_route 工具获得导航数据后，必须调用 update_map 前端工具来更新地图显示
-- 当调用 search_poi 工具获得 POI 数据后，必须调用 update_map(action="search_poi") 来在地图上标记兴趣点
+- 当用户没有明确指定起点时，必须先调用 select_origin 前端工具让用户选择起点
+- select_origin 的 options 参数设为 ["家", "公司", "火车站", "机场"]
+- 调用 plan_route 工具获得导航数据后，必须调用 update_map 前端工具来更新地图显示
+- 调用 search_poi 工具获得 POI 数据后，必须调用 update_map(action="search_poi") 来在地图上标记兴趣点
 - update_map 的 route_coords 格式为 [[lat, lng], ...], pois 格式为 [{"name":"xx","lat":31.23,"lng":121.47}, ...]
-- 回复要简洁，适合车载语音播报场景`
-      }
+- 回复要简洁，适合车载语音播报场景`}
       labels={{
         title: "AutoMind 助手",
         initial: "你好，我是你的车载智能助手。有什么可以帮你的吗？",
@@ -134,7 +215,7 @@ function AppLayout() {
             <div>
               <h1 className="text-lg font-bold text-white">AutoMind</h1>
               <p className="text-[10px] text-slate-400">
-                智能车机助手 · LangGraph + MCP + AG-UI
+                智能车机助手 · 高德地图 + LangGraph + MCP
               </p>
             </div>
           </div>
@@ -143,31 +224,35 @@ function AppLayout() {
               <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
               在线
             </span>
-            <a
-              href="http://localhost:3000"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-lg bg-slate-700/50 px-3 py-1.5 text-xs hover:bg-slate-700 transition-colors"
-            >
-              LangFuse 观测台
-            </a>
           </div>
         </header>
 
-        {/* 主区域：左地图 + 下方信息卡 */}
+        {/* 主区域 */}
         <main className="flex-1 overflow-hidden p-4">
           <div className="flex h-full flex-col gap-4">
-            {/* 地图（占满主要区域） */}
             <div className="flex-1 min-h-0">
-              <MapPanel mapState={mapState} />
+              <MapPanel
+                mapState={mapState}
+                amapKey={amapKey}
+                amapSecret={amapSecret}
+              />
             </div>
-            {/* 底部紧凑信息卡 */}
             <div className="shrink-0">
               <VehicleDashboard />
             </div>
           </div>
         </main>
       </div>
+
+      {/* 起点选择浮层 */}
+      {originSelectorVisible && (
+        <OriginSelector
+          options={originSelectorOptions}
+          message={originSelectorMessage}
+          onSelect={handleOriginSelect}
+          onCancel={handleOriginCancel}
+        />
+      )}
     </CopilotSidebar>
   );
 }
