@@ -16,6 +16,24 @@ services:
     networks:
       - automind-net
 
+  # ===== AutoMind CopilotKit Runtime (Express + HttpAgent) =====
+  # Official Runtime layer: Frontend → Runtime → Python backend
+  vehicle-runtime:
+    build:
+      context: ../runtime
+      dockerfile: Dockerfile
+    container_name: automind-runtime
+    restart: always
+    ports:
+      - "${RUNTIME_PORT:-4000}:${RUNTIME_PORT:-4000}"
+    environment:
+      - RUNTIME_PORT=${RUNTIME_PORT:-4000}
+      - PYTHON_AGENT_URL=http://vehicle-backend:${BACKEND_PORT:-8001}/copilotkit
+    depends_on:
+      - vehicle-backend
+    networks:
+      - automind-net
+
   # ===== AutoMind frontend (React + CopilotKit) =====
   vehicle-frontend:
     build:
@@ -29,6 +47,7 @@ services:
       - "${FRONTEND_PORT:-5174}:80"
     depends_on:
       - vehicle-backend
+      - vehicle-runtime
     networks:
       - automind-net
 

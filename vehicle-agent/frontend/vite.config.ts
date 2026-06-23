@@ -8,8 +8,8 @@ export default defineConfig({
     port: 5174,
     host: true,
     proxy: {
-      '/agent': {
-        target: 'http://localhost:8001',
+      '/api/copilotkit': {
+        target: 'http://localhost:4000',
         changeOrigin: true,
         ws: true,
       },

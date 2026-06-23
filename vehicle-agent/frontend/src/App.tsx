@@ -2,9 +2,7 @@ import { useState, useEffect } from "react";
 import { CopilotKit } from "@copilotkit/react-core/v2";
 import { useFrontendTool, useHumanInTheLoop } from "@copilotkit/react-core/v2";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { HttpAgent } from "@ag-ui/client";
 import { z } from "zod";
-import { ToolCallStatus } from "@copilotkit/react-core/v2";
 import MapPanel, {
   type MapState,
   DEFAULT_MAP_STATE,
@@ -12,10 +10,12 @@ import MapPanel, {
   generateRouteCoords,
 } from "./components/MapPanel";
 import VehicleDashboard from "./components/VehicleDashboard";
+import HumanChoiceSelector from "./components/HumanChoiceSelector";
 import "@copilotkit/react-ui/v2/styles.css";
 
-// AG-UI 代理，直连后端 SSE 端点
-const automindAgent = new HttpAgent({ url: "/agent" });
+// CopilotKit Runtime 模式：前端通过 runtimeUrl 连接 Runtime 服务器
+// Runtime 服务器（Express:4000）代理请求到 Python 后端（FastAPI:8001）
+// 不再使用 selfManagedAgents 直连模式
 
 // 折叠/展开按钮图标
 function CollapseIcon() {
@@ -57,69 +57,50 @@ function AppLayout() {
       });
   }, []);
 
-  // useHumanInTheLoop: select_origin — Agent暂停等待用户选择起点
-  // CopilotKitMiddleware 自动将此工具注入到 navigation_agent 的工具列表中
+  // ===== useHumanInTheLoop: select_origin — 官方标准 Human-in-the-Loop =====
+  //
+  // Agent 调用 select_origin 时，CopilotKit 暂停执行并触发 render 函数。
+  // render 内部通过 HumanChoiceSelector 组件（createPortal 渲染到 body）
+  // 脱离 CopilotKit 聊天 DOM，避免 CSS pointer-events 限制。
+  // 用户选择选项或输入文本后，respond() 回调将结果返回给大模型继续执行。
   useHumanInTheLoop({
-    agentId: "navigation_agent",
+    agentId: "default",
     name: "select_origin",
-    description: "让用户选择导航起点位置。弹出选择面板，提供家、公司、火车站、机场等常见起点选项。",
+    description:
+      "让用户选择导航起点位置。弹出选择面板，提供家、公司、火车站、机场等常见起点选项，也可输入自定义地点。",
     parameters: z.object({
       options: z.array(z.string()).describe("可选起点列表"),
       message: z.string().describe("询问起点时展示给用户的提示文本"),
     }),
     render: ({ args, status, respond }) => {
-      if (status === ToolCallStatus.InProgress) {
-        return <div className="p-2 text-sm text-slate-400">正在准备起点选择...</div>;
-      }
-
-      if (status === ToolCallStatus.Executing && respond) {
-        const options = (args as any)?.options || ["家", "公司", "火车站", "机场"];
-        const message = (args as any)?.message || "请选择您的出发地点：";
-
-        const OPTION_ICONS: Record<string, string> = {
-          "家": "🏠", "公司": "🏢", "火车站": "🚉", "机场": "✈️",
-        };
-        const OPTION_COLORS: Record<string, string> = {
-          "家": "from-green-500 to-emerald-400",
-          "公司": "from-blue-500 to-cyan-400",
-          "火车站": "from-amber-500 to-yellow-400",
-          "机场": "from-purple-500 to-violet-400",
-        };
-
+      if (status === "inProgress") {
         return (
-          <div className="p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-base">🧭</span>
-              <span className="text-sm font-semibold text-white">{message}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              {options.map((opt: string) => (
-                <button
-                  key={opt}
-                  className="flex items-center gap-2 rounded-lg border border-slate-600/50 bg-slate-800/60 px-3 py-2.5 text-sm text-white hover:bg-slate-700 hover:border-slate-500 active:scale-[0.98] transition-all"
-                  onClick={() => respond(opt)}
-                >
-                  <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${
-                    OPTION_COLORS[opt] || "from-slate-500 to-slate-400"
-                  } text-sm font-bold shadow-sm`}>
-                    {OPTION_ICONS[opt] || "📍"}
-                  </div>
-                  <span className="font-medium">{opt}</span>
-                </button>
-              ))}
-            </div>
-            <button
-              className="w-full rounded-lg border border-slate-600/30 bg-slate-900/40 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-300 active:scale-[0.98] transition-all"
-              onClick={() => respond("当前位置")}
-            >
-              取消选择（使用当前位置）
-            </button>
+          <div className="p-2 text-sm text-slate-400 flex items-center gap-2">
+            <span className="animate-spin">⏳</span> 正在准备选择...
           </div>
         );
       }
 
-      // Complete
-      return <div className="p-2 text-xs text-green-400">✓ 起点已选择</div>;
+      if (status === "executing" && respond) {
+        const options = (args as any)?.options || ["家", "公司", "火车站", "机场"];
+        const message = (args as any)?.message || "请选择您的出发地点：";
+
+        // HumanChoiceSelector 内部使用 createPortal 渲染到 document.body，
+        // 脱离 CopilotKit 聊天 DOM 的 CSS 限制，按钮可正常点击交互
+        return (
+          <HumanChoiceSelector
+            options={options}
+            message={message}
+            onSelect={(value: string) => respond(value)}
+            onCancel={() => respond("当前位置")}
+          />
+        );
+      }
+
+      // complete
+      return (
+        <div className="p-2 text-xs text-green-400">✓ 已完成选择</div>
+      );
     },
   });
 
@@ -279,13 +260,14 @@ function AppLayout() {
           />
         </div>
       )}
+
     </div>
   );
 }
 
 export default function App() {
   return (
-    <CopilotKit agents__unsafe_dev_only={{ default: automindAgent }}>
+    <CopilotKit runtimeUrl="/api/copilotkit" useSingleEndpoint={false}>
       <AppLayout />
     </CopilotKit>
   );

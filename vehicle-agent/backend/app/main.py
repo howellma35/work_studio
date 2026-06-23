@@ -2,7 +2,7 @@
 AutoMind 车机智能助手 - FastAPI 服务入口
 
 集成:
-- AG-UI SSE 端点（暴露 /agent 端点，通过 ag-ui-langgraph 直接流式输出）
+- ag_ui_langgraph 原生 AG-UI 端点（/copilotkit）— SSE, text/event-stream
 - LangFuse 可观测性
 - LangGraph Studio 调试支持
 - 健康检查 & 状态查询接口
@@ -55,27 +55,41 @@ async def lifespan(app: FastAPI):
 
     # 预构建 Supervisor 图（会加载 MCP 工具）
     logger.info("正在构建 LangGraph Supervisor 图...")
-    await get_graph()
+    graph = await get_graph()
     logger.info("Supervisor 图构建完成")
 
-    # 注册 AG-UI SSE 端点（标准协议，无需自定义适配器）
-    from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
+    # 注册 AG-UI 原生端点
+    #
+    # 架构: Frontend → CopilotSseRuntime(Node:4000) → HttpAgent → POST /copilotkit
+    #
+    # HttpAgent(@ag-ui/client) 发送: Content-Type: application/json, Accept: text/event-stream
+    # 请求体: RunAgentInput JSON
+    # 期望响应: SSE 流（text/event-stream, "data: {...}\n\n" 格式）
+    #
+    # add_langgraph_fastapi_endpoint 正是提供此行为的官方 best practice：
+    #   - 使用 EventEncoder 将 Pydantic 事件对象编码为 "data: {json}\n\n"
+    #   - 返回 StreamingResponse(media_type="text/event-stream")
+    #   - 每请求 clone() agent，避免并发状态污染
+    #   - LangGraphAGUIAgent.langgraph_default_merge_state() 自动将 RunAgentInput.tools
+    #     存入 state["copilotkit"]["actions"]，供 CopilotKitMiddleware 注入给子 Agent
+    from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+    from copilotkit import LangGraphAGUIAgent
 
-    # 将 Langfuse CallbackHandler 注入到 Agent config
     langfuse_handler = get_langfuse_handler()
     agent_config = {}
     if langfuse_handler:
         agent_config = {"callbacks": [langfuse_handler]}
-        logger.info("Langfuse CallbackHandler 已注入到 LangGraphAgent")
+        logger.info("Langfuse CallbackHandler 已注入到 LangGraphAGUIAgent")
 
-    agent = LangGraphAgent(
-        name="automind",
+    agent = LangGraphAGUIAgent(
+        name="default",
         description="AutoMind 智能车机助手 - 支持导航、音乐、车辆控制、天气、提醒",
-        graph=await get_graph(),
+        graph=graph,
         config=agent_config,
     )
-    add_langgraph_fastapi_endpoint(app, agent, "/agent")
-    logger.info("AG-UI SSE 端点已注册: POST /agent")
+    add_langgraph_fastapi_endpoint(app, agent, path="/copilotkit")
+    logger.info("AG-UI 端点已注册: POST /copilotkit（SSE, text/event-stream）")
+    logger.info("AG-UI 健康检查: GET /copilotkit/health")
     logger.info("=" * 60)
     logger.info("AutoMind 服务就绪")
     logger.info("=" * 60)
@@ -91,6 +105,7 @@ app = FastAPI(
     description="基于 LangGraph + MCP + CopilotKit 的工业级车载智能助手平台",
     version="1.0.0",
     lifespan=lifespan,
+    # redirect_slashes=False,  # 避免 POST /copilotkit → 307 → HttpAgent 不跟重定向
 )
 
 # CORS 配置
@@ -106,15 +121,16 @@ app.add_middleware(
 # ===== 调试中间件：打印请求时前端传来的 tools =====
 @app.middleware("http")
 async def debug_tools_middleware(request: Request, call_next):
-    """拦截 /agent 请求，打印前端传来的 tools 列表"""
-    if request.url.path == "/agent" and request.method == "POST":
+    """拦截 /copilotkit 请求，打印前端传来的 tools 列表（RunAgentInput.tools）"""
+    if request.url.path.startswith("/copilotkit") and request.method == "POST":
         body = await request.body()
         try:
             import json
             data = json.loads(body)
             tools = data.get("tools", [])
             if tools:
-                logger.info(f"[请求时] 前端传来 {len(tools)} 个 tools: {[t.get('name', '?') for t in tools]}")
+                names = [t.get("name", "?") if isinstance(t, dict) else getattr(t, "name", "?") for t in tools]
+                logger.info(f"[请求时] 前端传来 {len(tools)} 个 tools: {names}")
             else:
                 logger.warning("[请求时] 前端没有传 tools（空列表或无此字段）")
         except Exception as e:
