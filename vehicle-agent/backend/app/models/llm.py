@@ -14,7 +14,7 @@ from loguru import logger
 from app.config import settings
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
 def create_llm(
     model: str | None = None,
     temperature: float = 0.7,

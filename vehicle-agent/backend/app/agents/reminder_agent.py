@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.config import settings
 from app.memory.manager import memory_manager
@@ -78,9 +78,9 @@ def save_user_preference(category: str, value: str) -> dict:
 
 def create_reminder_agent():
     """创建提醒子Agent，绑定记忆相关工具"""
-    return create_react_agent(
-        model=create_llm(),
+    return create_agent(
+        model=create_llm(temperature=0.3),
         tools=[create_reminder, list_reminders, save_user_preference],
         name="reminder_agent",
-        prompt=REMINDER_PROMPT,
+        system_prompt=REMINDER_PROMPT,
     )

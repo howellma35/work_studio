@@ -25,9 +25,9 @@ class AutoMindState(CopilotKitState):
     - active_agent: 当前激活的子Agent
     """
 
-    user_id: str
-    user_profile: dict
-    recalled_preferences: list[str]
-    pending_reminders: list[dict]
-    current_vehicle_status: dict
-    active_agent: str
+    user_id: str = "demo_user_001"
+    user_profile: dict = {}
+    recalled_preferences: list[str] = []
+    pending_reminders: list[dict] = []
+    current_vehicle_status: dict = {}
+    active_agent: str = ""

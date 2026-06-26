@@ -11,7 +11,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -96,6 +96,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # 关闭持久化 checkpointer
+    from app.graph.supervisor import close_checkpointer
+    await close_checkpointer()
+
     logger.info("AutoMind 服务已关闭")
 
 
@@ -111,31 +115,11 @@ app = FastAPI(
 # CORS 配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ===== 调试中间件：打印请求时前端传来的 tools =====
-@app.middleware("http")
-async def debug_tools_middleware(request: Request, call_next):
-    """拦截 /copilotkit 请求，打印前端传来的 tools 列表（RunAgentInput.tools）"""
-    if request.url.path.startswith("/copilotkit") and request.method == "POST":
-        body = await request.body()
-        try:
-            import json
-            data = json.loads(body)
-            tools = data.get("tools", [])
-            if tools:
-                names = [t.get("name", "?") if isinstance(t, dict) else getattr(t, "name", "?") for t in tools]
-                logger.info(f"[请求时] 前端传来 {len(tools)} 个 tools: {names}")
-            else:
-                logger.warning("[请求时] 前端没有传 tools（空列表或无此字段）")
-        except Exception as e:
-            logger.error(f"[请求时] 解析请求体失败: {e}")
-    return await call_next(request)
 
 
 # ===== REST API 端点 =====
@@ -163,7 +147,7 @@ async def agent_info():
             {"name": "reminder_agent", "desc": "智能提醒助手", "tools": ["create_reminder", "list_reminders", "save_user_preference"]},
         ],
         "modules": {
-            "memory": {"short_term": "MemorySaver", "long_term": "ChromaDB + SQLite"},
+            "memory": {"short_term": "AsyncSqliteSaver", "long_term": "ChromaDB + SQLite"},
             "mcp": "Model Context Protocol (FastMCP)",
             "observability": "LangFuse",
         },

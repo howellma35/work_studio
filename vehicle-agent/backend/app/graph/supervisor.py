@@ -9,8 +9,10 @@ AutoMind Supervisor Agent - 多Agent编排核心
 这是整个系统的"大脑"，通过 LangGraph 状态图协调所有子Agent。
 """
 import asyncio
+from contextlib import AsyncExitStack
+from pathlib import Path
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_supervisor import create_supervisor
 from loguru import logger
@@ -22,6 +24,7 @@ from app.agents.vehicle_agent import create_vehicle_agent
 from app.agents.weather_agent import create_weather_agent
 from app.config import settings
 from app.graph.routing import ROUTING_DESCRIPTION
+from app.graph.state import AutoMindState
 from app.memory.manager import memory_manager
 from app.mcp.client import load_mcp_tools
 from app.models.llm import create_llm
@@ -144,10 +147,12 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
         agents=agents,
         model=create_llm(temperature=0.3),
         prompt=_build_prompt,
+        state_schema=AutoMindState,   # 关键：让 copilotkit.actions 能传到子 Agent
     )
 
-    # 6. 编译图，附加 checkpointer 实现多轮对话记忆
-    graph = supervisor.compile(checkpointer=MemorySaver())
+    # 6. 编译图，附加持久化 checkpointer
+    checkpointer = await get_checkpointer()
+    graph = supervisor.compile(checkpointer=checkpointer)
 
     logger.info(
         f"AutoMind Supervisor 图构建完成 | "
@@ -159,6 +164,25 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
 # 全局图实例（延迟加载）
 _graph_instance: CompiledStateGraph | None = None
 _graph_lock = asyncio.Lock()
+
+# ===== 持久化 Checkpointer 管理 =====
+_checkpointer_stack = AsyncExitStack()
+_checkpointer = None
+
+async def get_checkpointer():
+    """进程级单例：AsyncSqliteSaver 连接在整个应用生命周期内保持打开"""
+    global _checkpointer
+    if _checkpointer is None:
+        db_path = str(settings.SQLITE_DB_PATH).replace("memory.db", "checkpoints.db")
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        _checkpointer = await _checkpointer_stack.enter_async_context(
+            AsyncSqliteSaver.from_conn_string(db_path)
+        )
+    return _checkpointer
+
+async def close_checkpointer():
+    """关闭 checkpointer 连接（应用 shutdown 时调用）"""
+    await _checkpointer_stack.aclose()
 
 
 async def get_graph(frontend_tools: list | None = None) -> CompiledStateGraph:

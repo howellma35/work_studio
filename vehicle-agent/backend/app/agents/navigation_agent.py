@@ -50,7 +50,7 @@ def create_navigation_agent(tools: list[BaseTool]):
     # CopilotKitMiddleware 会自动将前端注册的工具（useFrontendTool / useHumanInTheLoop）
     # 注入到 Agent 的工具列表中，不需要后端手动添加 stub
     return create_agent(
-        model=create_llm(),
+        model=create_llm(temperature=0.3),
         tools=navigation_tools,
         name="navigation_agent",
         system_prompt=NAVIGATION_PROMPT,

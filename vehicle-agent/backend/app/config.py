@@ -1,57 +1,67 @@
 """
 AutoMind 车机智能助手 - 全局配置
-所有配置项通过环境变量读取，支持 ${variable_name} 自定义
+所有配置项通过环境变量读取，使用 pydantic-settings 自动加载 + 类型校验
 """
-import os
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv()
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings:
-    """应用配置（从环境变量加载）"""
+class Settings(BaseSettings):
+    """应用配置（pydantic-settings 自动从 .env 加载，类型自动转换）"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # ===== 服务配置 =====
-    PORT: int = int(os.getenv("PORT", "8001"))
-    CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
+    PORT: int = 8001
+    CORS_ORIGINS: str = "*"  #逗号分隔，运行时 split
 
     # ===== LLM 配置（百炼平台 OpenAI 兼容接口）=====
-    LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
-    LLM_API_BASE: str = os.getenv("LLM_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "deepseek-v3")
+    LLM_API_KEY: str = ""
+    LLM_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    LLM_MODEL: str = "deepseek-v3"
 
     # ===== MCP Server 配置 =====
-    MCP_TRANSPORT: str = os.getenv("MCP_TRANSPORT", "stdio")
-    MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8765")
-    MAP_SERVICE_PROVIDER: str = os.getenv("MAP_SERVICE_PROVIDER", "amap")
+    MCP_TRANSPORT: str = "stdio"
+    MCP_SERVER_URL: str = "http://localhost:8765"
+    MAP_SERVICE_PROVIDER: str = "amap"
 
     # ===== 高德地图 API 配置 =====
-    AMAP_API_KEY: str = os.getenv("AMAP_API_KEY", "")
-    AMAP_JS_KEY: str = os.getenv("AMAP_JS_KEY", "")
-    AMAP_JS_SECRET: str = os.getenv("AMAP_JS_SECRET", "")  # JS API 安全密钥
-    AMAP_API_BASE: str = os.getenv("AMAP_API_BASE", "https://restapi.amap.com/v3")
+    AMAP_API_KEY: str = ""
+    AMAP_JS_KEY: str = ""
+    AMAP_JS_SECRET: str = ""  # JS API 安全密钥
+    AMAP_API_BASE: str = "https://restapi.amap.com/v3"
 
     # ===== 记忆模块配置 =====
-    MEMORY_ENABLED: bool = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
-    CHROMA_PERSIST_DIR: Path = Path(os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"))
-    SQLITE_DB_PATH: str = os.getenv("SQLITE_DB_PATH", "./data/memory.db")
-    EMBEDDING_API_KEY: str = os.getenv("EMBEDDING_API_KEY", "")
-    EMBEDDING_API_BASE: str = os.getenv("EMBEDDING_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
+    MEMORY_ENABLED: bool = True
+    CHROMA_PERSIST_DIR: Path = Path("./data/chroma")
+    SQLITE_DB_PATH: str = "./data/memory.db"
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    EMBEDDING_MODEL: str = "text-embedding-v3"
 
     # ===== LangFuse 可观测性配置 =====
-    LANGFUSE_BASE_URL: str = os.getenv("LANGFUSE_BASE_URL", os.getenv("LANGFUSE_HOST", "http://localhost:3000"))
-    LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
-    LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+    LANGFUSE_BASE_URL: str = "http://localhost:3000"
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
 
     # ===== 日志 =====
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    LOG_DIR: Path = Path(os.getenv("LOG_DIR", "logs"))
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: Path = Path("logs")
 
     # ===== Demo 默认值 =====
-    DEFAULT_VEHICLE_TEMP: int = int(os.getenv("DEFAULT_VEHICLE_TEMP", "22"))
-    DEFAULT_VEHICLE_USER_ID: str = os.getenv("DEFAULT_VEHICLE_USER_ID", "demo_user_001")
+    DEFAULT_VEHICLE_TEMP: int = 22
+    DEFAULT_VEHICLE_USER_ID: str = "demo_user_001"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """CORS_ORIGINS 拆分为列表"""
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     def ensure_dirs(self) -> None:
         """确保运行所需目录存在"""

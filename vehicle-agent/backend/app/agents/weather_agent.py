@@ -3,7 +3,7 @@
 负责实时天气、未来预报、出行建议
 """
 from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.models.llm import create_llm
 
@@ -30,9 +30,9 @@ def create_weather_agent(tools: list[BaseTool]):
         t for t in tools
         if any(kw in t.name for kw in ["weather", "forecast"])
     ]
-    return create_react_agent(
-        model=create_llm(),
+    return create_agent(
+        model=create_llm(temperature=0.3),
         tools=weather_tools,
         name="weather_agent",
-        prompt=WEATHER_PROMPT,
+        system_prompt=WEATHER_PROMPT,
     )

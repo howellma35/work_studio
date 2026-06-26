@@ -3,7 +3,7 @@
 负责音乐播放控制、音量调节、歌单管理
 """
 from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.models.llm import create_llm
 
@@ -31,9 +31,9 @@ def create_media_agent(tools: list[BaseTool]):
         t for t in tools
         if any(kw in t.name for kw in ["music", "song", "volume", "playlist"])
     ]
-    return create_react_agent(
-        model=create_llm(),
+    return create_agent(
+        model=create_llm(temperature=0.3),
         tools=media_tools,
         name="media_agent",
-        prompt=MEDIA_PROMPT,
+        system_prompt=MEDIA_PROMPT,
     )

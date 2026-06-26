@@ -64,7 +64,6 @@ function AppLayout() {
   // 脱离 CopilotKit 聊天 DOM，避免 CSS pointer-events 限制。
   // 用户选择选项或输入文本后，respond() 回调将结果返回给大模型继续执行。
   useHumanInTheLoop({
-    agentId: "default",
     name: "select_origin",
     description:
       "让用户选择导航起点位置。弹出选择面板，提供家、公司、火车站、机场等常见起点选项，也可输入自定义地点。",

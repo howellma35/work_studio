@@ -3,7 +3,7 @@
 负责车窗、空调、门锁、座椅控制及状态查询
 """
 from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.models.llm import create_llm
 
@@ -32,9 +32,9 @@ def create_vehicle_agent(tools: list[BaseTool]):
         t for t in tools
         if any(kw in t.name for kw in ["window", "climate", "door", "seat", "vehicle_status"])
     ]
-    return create_react_agent(
-        model=create_llm(),
+    return create_agent(
+        model=create_llm(temperature=0.3),
         tools=vehicle_tools,
         name="vehicle_agent",
-        prompt=VEHICLE_PROMPT,
+        system_prompt=VEHICLE_PROMPT,
     )
