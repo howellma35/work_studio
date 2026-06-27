@@ -108,7 +108,6 @@ interface MapPanelProps {
 export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const drivingRef = useRef<any>(null);
   const AMapRef = useRef<any>(null); // 缓存 AMap 全局对象
   const markersRef = useRef<any[]>([]);
   const polylineRef = useRef<any>(null);
@@ -147,14 +146,13 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       mapRef.current = null;
       markersRef.current = [];
       poiMarkersRef.current = [];
-      drivingRef.current = null;
       polylineRef.current = null;
     }
 
     AMapLoader.load({
       key: amapKey,
       version: "2.0",
-      plugins: ["AMap.Driving", "AMap.Geocoder"],
+      plugins: ["AMap.Geocoder"],
     }).then((AMap: any) => {
       if (!containerRef.current) return;
 
@@ -178,14 +176,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       currentMarker.setMap(map);
       markersRef.current.push(currentMarker);
 
-      // 初始化 Driving 插件
-      const driving = new AMap.Driving({
-        map: map,
-        policy: AMap.DrivingPolicy.LEAST_TIME,
-        autoFitView: true,
-      });
-      drivingRef.current = driving;
-
+      // 路线直接用后端坐标画 Polyline，无需 Driving 插件二次规划
       console.log("高德地图初始化成功, Key:", amapKey);
     }).catch((e: Error) => {
       console.error("高德地图加载失败:", e);
@@ -218,13 +209,6 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       polylineRef.current.setMap(null);
       polylineRef.current = null;
     }
-    if (drivingRef.current) {
-      drivingRef.current.clear();
-    }
-
-    // 视角中心 — 用 [lng, lat] 格式
-    const centerTarget = destination || origin || currentPosition;
-    map.setCenter(toAmapArray(centerTarget));
 
     // 起点标记（绿色）
     if (origin) {
@@ -258,40 +242,23 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       markersRef.current.push(destMarker);
     }
 
-    // 路线渲染
+    // 路线渲染 —— 直接用后端返回的 routeCoords 画 Polyline。
+    //
+    // 旧实现这里调用 AMap.Driving.search() 二次向高德服务器请求规划，
+    // 而后端 plan_route 已返回真实路径坐标，导致"重复规划 + 额外网络往返"，
+    // 是路线刷新很慢的主因。现改为本地直接画线，刷新即时完成。
     if (routeCoords.length > 1) {
-      // 有起终点时优先用 Driving 插件规划真实路线
-      if (origin && destination && drivingRef.current) {
-        drivingRef.current.search(
-          toLngLat(origin, AMap),      // 高德用 lng,lat
-          toLngLat(destination, AMap),
-          (status: string, result: any) => {
-            if (status === "complete" && result.routes && result.routes.length > 0) {
-              // Driving 自动绘制路线
-            } else {
-              // fallback 手动折线 — path 用 AMap.LngLat
-              const polyline = new AMap.Polyline({
-                path: routeCoords.map((c) => toLngLat(c, AMap)),
-                strokeColor: "#3b82f6",
-                strokeWeight: 5,
-                strokeOpacity: 0.85,
-              });
-              polyline.setMap(map);
-              polylineRef.current = polyline;
-            }
-          },
-        );
-      } else {
-        // 手动折线
-        const polyline = new AMap.Polyline({
-          path: routeCoords.map((c) => toLngLat(c, AMap)),
-          strokeColor: "#3b82f6",
-          strokeWeight: 5,
-          strokeOpacity: 0.85,
-        });
-        polyline.setMap(map);
-        polylineRef.current = polyline;
-      }
+      const polyline = new AMap.Polyline({
+        path: routeCoords.map((c) => toLngLat(c, AMap)),
+        strokeColor: "#3b82f6",
+        strokeWeight: 6,
+        strokeOpacity: 0.9,
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+      });
+      polyline.setMap(map);
+      polylineRef.current = polyline;
     }
 
     // POI 标记（橙色） — position 用 [lng, lat]

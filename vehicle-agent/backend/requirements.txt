@@ -7,7 +7,6 @@ pydantic-settings>=2.0.0
 
 # ===== LangGraph & LangChain 生态 =====
 langgraph>=1.0.5
-langgraph-supervisor>=0.0.10
 langgraph-checkpoint-sqlite>=2.0.0
 langchain>=1.2.0
 langchain-core>=1.2.0

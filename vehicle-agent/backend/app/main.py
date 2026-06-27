@@ -139,8 +139,10 @@ async def agent_info():
     """获取 Agent 架构信息（用于前端展示）"""
     return {
         "agent_name": "AutoMind",
+        "architecture": "supervisor(create_agent) + sub-agents as tools (A2)",
+        "supervisor_tools": ["select_origin", "update_map"],
         "sub_agents": [
-            {"name": "navigation_agent", "desc": "导航专家", "tools": ["plan_route", "search_poi", "get_traffic_info", "update_map", "select_origin"]},
+            {"name": "navigation_agent", "desc": "导航专家", "tools": ["plan_route", "search_poi", "get_traffic_info"]},
             {"name": "media_agent", "desc": "多媒体专家", "tools": ["play_music", "pause_music", "next_song", "set_volume", "get_playlist"]},
             {"name": "vehicle_agent", "desc": "车辆控制专家", "tools": ["control_window", "set_climate", "lock_doors", "set_seat", "get_vehicle_status"]},
             {"name": "weather_agent", "desc": "天气助手", "tools": ["get_weather", "get_forecast"]},

@@ -4,6 +4,25 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", sans-serif;
+
+  /* ========== CopilotKit 暗色主题变量覆盖 ========== */
+  /* 激活方式：通过 :root 直接覆盖，全局生效 */
+  --copilot-kit-primary-color: #60a5fa;
+  --copilot-kit-contrast-color: #0f172a;
+  --copilot-kit-background-color: #0c1222;
+  --copilot-kit-input-background-color: rgba(30, 41, 59, 0.6);
+  --copilot-kit-secondary-color: rgba(30, 41, 59, 0.5);
+  --copilot-kit-secondary-contrast-color: #e2e8f0;
+  --copilot-kit-separator-color: rgba(71, 85, 105, 0.35);
+  --copilot-kit-muted-color: rgba(100, 116, 139, 0.6);
+
+  --copilot-kit-error-background: #7f1d1d;
+  --copilot-kit-error-border: #dc2626;
+  --copilot-kit-error-text: #fca5a5;
+
+  --copilot-kit-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --copilot-kit-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --copilot-kit-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
 }
 
 body {
@@ -27,28 +46,6 @@ body {
 
 .glow-green {
   box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
-}
-
-/* CopilotKit 暗色主题覆盖 */
-.co-themed--dark {
-  --co-accent-color: #3b82f6;
-  --co-bg-color: #0f172a;
-  --co-fg-color: #e2e8f0;
-}
-
-/* CopilotSidebar 暗色适配 */
-.copilotKitSidebar {
-  --co-bg-color: #0f172a;
-  --co-fg-color: #e2e8f0;
-  --co-accent-color: #3b82f6;
-}
-
-.copilotKitSidebarContentWrapper {
-  height: 100vh;
-}
-
-.copilotKitSidebarContentWrapper .copilotKitSidebarContent {
-  background: #0a0e1a;
 }
 
 /* 高德地图暗色样式 */
@@ -85,4 +82,102 @@ body {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+/* ===== CopilotKit 聊天气泡样式覆盖 ===== */
+
+/* 消息容器内边距，左右留出呼吸空间 */
+.copilotKitMessagesContainer {
+  padding: 1rem 20px !important;
+}
+
+/* 所有消息统一内边距 */
+.copilotKitMessage {
+  padding: 10px 14px !important;
+}
+
+/* 用户消息 — 低调深蓝，不刺眼 */
+.copilotKitMessage.copilotKitUserMessage {
+  background: rgba(37, 99, 235, 0.55);
+  color: #f1f5f9;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+/* 助手消息 — 暗色玻璃，左侧留边距 */
+.copilotKitMessage.copilotKitAssistantMessage {
+  background: rgba(30, 41, 59, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  color: #e2e8f0;
+  border-radius: 1rem 1rem 1rem 0.25rem;
+}
+
+/* 助手消息内的 Markdown 文字 */
+.copilotKitAssistantMessage .copilotKitMarkdown,
+.copilotKitAssistantMessage .copilotKitParagraph,
+.copilotKitAssistantMessage li {
+  color: #cbd5e1;
+}
+
+/* 助手消息内的链接 */
+.copilotKitAssistantMessage a {
+  color: #7dd3fc;
+}
+
+/* 输入框 placeholder */
+.copilotKitInput > textarea::placeholder {
+  color: rgba(148, 163, 184, 0.6) !important;
+}
+
+/* 输入框 textarea 文字 */
+.copilotKitInput > textarea {
+  color: #e2e8f0;
+}
+
+/* 初始欢迎消息 */
+.copilotKitMessages .copilotKitInitialMessage {
+  color: #94a3b8;
+}
+
+/* ===== ROUTE_DATA/POI_DATA 折叠框 ===== */
+.route-data-fold {
+  margin: 0.5rem 0;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.route-data-fold > summary {
+  cursor: pointer;
+  color: #7dd3fc;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+}
+
+.route-data-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.route-data-fold > summary:hover {
+  color: #bae6fd;
+}
+
+.route-data-fold > pre {
+  margin-top: 0.5rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #64748b;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  max-height: 240px;
+  overflow-y: auto;
 }

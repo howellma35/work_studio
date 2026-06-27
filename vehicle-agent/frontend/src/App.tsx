@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import { CopilotKit } from "@copilotkit/react-core/v2";
-import { useFrontendTool, useHumanInTheLoop } from "@copilotkit/react-core/v2";
-import { CopilotChat } from "@copilotkit/react-ui";
+import {
+  useFrontendTool,
+  useHumanInTheLoop,
+  useDefaultRenderTool,
+} from "@copilotkit/react-core/v2";
+import { CopilotChat, AssistantMessage as DefaultAssistantMessage } from "@copilotkit/react-ui";
 import { z } from "zod";
 import MapPanel, {
   type MapState,
@@ -10,7 +14,8 @@ import MapPanel, {
   generateRouteCoords,
 } from "./components/MapPanel";
 import VehicleDashboard from "./components/VehicleDashboard";
-import HumanChoiceSelector from "./components/HumanChoiceSelector";
+import OriginChoiceCard from "./components/OriginChoiceCard";
+import AgentToolCard from "./components/AgentToolCard";
 import "@copilotkit/react-ui/v2/styles.css";
 
 // CopilotKit Runtime 模式：前端通过 runtimeUrl 连接 Runtime 服务器
@@ -30,6 +35,58 @@ function ExpandIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="9 18 15 12 9 6" />
     </svg>
+  );
+}
+
+/**
+ * 自定义 AssistantMessage：
+ * 1. 把 ROUTE_DATA/POI_DATA 数据行折叠进 <details>（默认收起）
+ * 2. 如果消息中包含 update_map 等工具调用且正在执行，隐藏文字内容，
+ *    显示“正在查询路况”加载提示，等工具完成后再显示文字
+ */
+function FoldableAssistantMessage(props: any) {
+  const rawContent: string = props.message?.content || "";
+  const hasToolCalls = !!props.message?.generativeUI;
+  const isGenerating = !!props.isGenerating;
+
+  // 如果当前消息仍在生成中且有工具调用（如 update_map 正在传输数据），
+  // 隐藏文字内容，显示加载提示
+  if (hasToolCalls && isGenerating && rawContent) {
+    return (
+      <div className="copilotKitMessage copilotKitAssistantMessage">
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <span>正在查询路况，请稍候...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 检测以 ROUTE_DATA: 或 POI_DATA: 开头的行（navigation_agent 返回的结构化数据）
+  if (!/^(ROUTE_DATA|POI_DATA):/m.test(rawContent)) {
+    return <DefaultAssistantMessage {...props} />;
+  }
+
+  // 把数据行替换为 <details> 折叠框
+  const processedContent = rawContent.replace(
+    /^(ROUTE_DATA|POI_DATA):.*$/gm,
+    (line) => {
+      const prefix = line.startsWith("ROUTE_DATA") ? "ROUTE_DATA" : "POI_DATA";
+      const label = prefix === "ROUTE_DATA" ? "路线数据" : "POI数据";
+      // 转义 HTML 特殊字符，避免破坏 <pre> 渲染
+      const escaped = line
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<details class="route-data-fold"><summary>📊 ${label}（点击展开）</summary><pre>${escaped}</pre></details>`;
+    },
+  );
+
+  return (
+    <DefaultAssistantMessage
+      {...props}
+      message={{ ...props.message, content: processedContent }}
+    />
   );
 }
 
@@ -60,13 +117,13 @@ function AppLayout() {
   // ===== useHumanInTheLoop: select_origin — 官方标准 Human-in-the-Loop =====
   //
   // Agent 调用 select_origin 时，CopilotKit 暂停执行并触发 render 函数。
-  // render 内部通过 HumanChoiceSelector 组件（createPortal 渲染到 body）
-  // 脱离 CopilotKit 聊天 DOM，避免 CSS pointer-events 限制。
-  // 用户选择选项或输入文本后，respond() 回调将结果返回给大模型继续执行。
+  // render 直接在聊天流中渲染内联小卡片 OriginChoiceCard（不再用全屏模态），
+  // 用户选择/输入后 respond() 把结果返回给大模型继续执行。
+  // 各状态卡片都保留在消息流中，形成可回看的历史调用记录。
   useHumanInTheLoop({
     name: "select_origin",
     description:
-      "让用户选择导航起点位置。弹出选择面板，提供家、公司、火车站、机场等常见起点选项，也可输入自定义地点。",
+      "让用户选择导航起点位置。在聊天中展示一个内联选择卡片，提供家、公司、火车站、机场等常见起点选项，也可输入自定义地点。",
     parameters: z.object({
       options: z.array(z.string()).describe("可选起点列表"),
       message: z.string().describe("询问起点时展示给用户的提示文本"),
@@ -74,8 +131,8 @@ function AppLayout() {
     render: ({ args, status, respond }) => {
       if (status === "inProgress") {
         return (
-          <div className="p-2 text-sm text-slate-400 flex items-center gap-2">
-            <span className="animate-spin">⏳</span> 正在准备选择...
+          <div className="my-1.5 flex items-center gap-2 rounded-xl border border-slate-600/30 bg-slate-800/50 backdrop-blur-sm p-2.5 text-xs text-slate-300">
+            <span className="animate-spin">⏳</span> 正在准备起点选择...
           </div>
         );
       }
@@ -83,22 +140,21 @@ function AppLayout() {
       if (status === "executing" && respond) {
         const options = (args as any)?.options || ["家", "公司", "火车站", "机场"];
         const message = (args as any)?.message || "请选择您的出发地点：";
-
-        // HumanChoiceSelector 内部使用 createPortal 渲染到 document.body，
-        // 脱离 CopilotKit 聊天 DOM 的 CSS 限制，按钮可正常点击交互
         return (
-          <HumanChoiceSelector
+          <OriginChoiceCard
             options={options}
             message={message}
             onSelect={(value: string) => respond(value)}
-            onCancel={() => respond("当前位置")}
           />
         );
       }
 
-      // complete
+      // complete — 保留一条紧凑的历史记录
+      const picked = (args as any)?.__picked;
       return (
-        <div className="p-2 text-xs text-green-400">✓ 已完成选择</div>
+        <div className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-600/30 bg-slate-800/50 backdrop-blur-sm px-2.5 py-1 text-xs text-slate-300">
+          ✓ 已选择起点{picked ? `：${picked}` : ""}
+        </div>
       );
     },
   });
@@ -191,6 +247,66 @@ function AppLayout() {
 
       return "未知操作";
     },
+    // render：聊天流内渲染紧凑导航卡片（不显示逐条 steps 长文本），保留为历史记录
+    render: ({ args, status }) => {
+      const a = (args as any) || {};
+      if (a.action === "search_poi") {
+        const n = (a.pois || []).length;
+        return (
+          <AgentToolCard
+            icon="📍"
+            title="地图标记兴趣点"
+            subtitle={status === "complete" ? `已标记 ${n} 个地点` : "更新地图中..."}
+            done={status === "complete"}
+          />
+        );
+      }
+      if (a.action === "clear") {
+        return (
+          <AgentToolCard icon="🗺️" title="清除地图" subtitle="" done={status === "complete"} />
+        );
+      }
+      // navigate
+      const origin = a.origin || "当前位置";
+      const dest = a.destination || "目的地";
+      const meta =
+        a.distance_km || a.duration_min
+          ? `${a.distance_km ?? "?"} km · 约 ${a.duration_min ?? "?"} 分钟`
+          : status === "complete"
+            ? "路线已显示在地图"
+            : "正在传输路线数据...";
+      return (
+        <AgentToolCard
+          icon="🧭"
+          title={`${origin} → ${dest}`}
+          subtitle={meta}
+          done={status === "complete"}
+        />
+      );
+    },
+  });
+
+  // 后端子Agent 工具调用（navigation_agent / media_agent / ...）的通用渲染：
+  // 用紧凑卡片代替大段原始文本，避免长文本刷屏；历史调用自然保留在 thread 中。
+  useDefaultRenderTool({
+    render: ({ name, status }) => {
+      const labelMap: Record<string, string> = {
+        navigation_agent: "导航助手",
+        media_agent: "多媒体助手",
+        vehicle_agent: "车辆控制",
+        weather_agent: "天气助手",
+        reminder_agent: "提醒助手",
+      };
+      const title = labelMap[name] || name;
+      return (
+        <AgentToolCard
+          icon="🤖"
+          title={title}
+          subtitle={status === "complete" ? "已完成" : "处理中..."}
+          done={status === "complete"}
+        />
+      );
+    },
   });
 
   return (
@@ -241,6 +357,7 @@ function AppLayout() {
       {chatOpen && (
         <div className="w-[380px] shrink-0 flex flex-col border-l border-slate-700/40 bg-slate-950/80 backdrop-blur transition-all duration-300">
           <CopilotChat
+            AssistantMessage={FoldableAssistantMessage}
             instructions={`你是 AutoMind 车机助手。你可以帮用户导航、播放音乐、控制车辆、查天气等。
 
 重要规则：

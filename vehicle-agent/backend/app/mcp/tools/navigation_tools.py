@@ -111,6 +111,22 @@ def _amap_str_to_coord(s: str) -> tuple[float, float]:
     return (float(parts[1]), float(parts[0]))
 
 
+def _downsample_coords(coords: list[list[float]], max_points: int = 40) -> list[list[float]]:
+    """对路线坐标降采样，保留首尾点，等间隔抽样到 max_points 个。
+
+    高德 polyline 常返回上百个点，全量经 LLM 流式输出会显著拖慢响应。
+    降采样后折线视觉上仍平滑，但负载大幅减小。
+    """
+    n = len(coords)
+    if n <= max_points:
+        return coords
+    step = (n - 1) / (max_points - 1)
+    sampled = [coords[round(i * step)] for i in range(max_points)]
+    # 确保末点是真实终点
+    sampled[-1] = coords[-1]
+    return sampled
+
+
 @mcp.tool()
 async def plan_route(origin: str, destination: str, avoid_traffic: bool = False, city: str = "上海") -> dict:
     """
@@ -192,6 +208,10 @@ async def plan_route(origin: str, destination: str, avoid_traffic: bool = False,
             [origin_coord[0], origin_coord[1]],
             [dest_coord[0], dest_coord[1]],
         ]
+
+    # 降采样路线坐标，减小经 LLM 流式输出的负载（加快地图刷新）
+    # 20 点已足够画平滑折线，token 消耗约为 40 点的一半
+    route_coords = _downsample_coords(route_coords, max_points=20)
 
     return {
         "status": "ok",
