@@ -2,14 +2,16 @@
 导航子Agent
 负责路径规划、POI搜索、路况查询、ETA预估
 
-前端工具(update_map, select_origin)通过 CopilotKitMiddleware 自动注入到 Agent 的工具列表中，
-前端 useFrontendTool / useHumanInTheLoop 注册的工具定义会通过 AG-UI 协议传到后端，
-CopilotKitMiddleware 将它们转发给子 Agent，让 LLM 能看到并调用这些前端工具。
-当 Agent 调用前端工具时，AG-UI 协议路由到前端 handler 执行，结果返回给 LLM 继续对话。
+【方式 A2 架构】
+本子 Agent 只持有自己的 MCP 工具（plan_route / search_poi / get_traffic_info），
+不再挂载 CopilotKitMiddleware。前端工具（select_origin / update_map）由顶层 supervisor
+持有（官方 Sub-Agents 模式：supervisor = create_agent + CopilotKitMiddleware）。
+
+子 Agent 由 supervisor 通过 @tool 同步 invoke 调用，内部消息不冒泡到 supervisor，
+因此 HITL 暂停只发生在 supervisor 单一作用域，不会产生跨作用域孤儿 tool_call。
 """
 from langchain_core.tools import BaseTool
 from langchain.agents import create_agent
-from copilotkit import CopilotKitMiddleware
 
 from app.models.llm import create_llm
 
@@ -23,36 +25,28 @@ NAVIGATION_PROMPT = """\
 - ETA 预估：预估到达时间
 
 工作规则：
-1. 如果用户没有明确起点（例如只说"导航去公司"而未说从哪出发），必须先调用 select_origin 前端工具，让用户选择起点
-   - select_origin 的 options 参数设为: ["家", "公司", "火车站", "机场"]
-   - select_origin 的 message 参数设为: "请选择您的出发地点："
-   - 用户选择后，将该地点作为起点调用 plan_route
-2. 调用 plan_route 获得路线数据后，必须立即调用 update_map 前端工具更新地图显示
-   - action 参数设为 "navigate"
-   - 传递完整的路线数据：destination, destination_lat, destination_lng, origin, origin_lat, origin_lng, distance_km, duration_min, steps, route_coords
-3. 调用 search_poi 获得 POI 数据后，必须调用 update_map(action="search_poi") 来在地图上标记兴趣点
-   - 传递 pois 参数: [{"name":"xx","lat":31.23,"lng":121.47}, ...]
-4. 提供路线时，说明距离、时长和路况
-5. 发现拥堵时主动建议绕行
-6. 用简洁的车机语音风格回复，适合驾驶场景
-
-重要：每次导航操作都必须调用 update_map 前端工具，否则用户看不到地图上的路线变化！"""
+1. 调用方（supervisor）会在任务里给出明确的起点和终点。直接用它们调用 plan_route 规划路线。
+   - 若任务未给起点，默认用 "当前位置" 作为 origin（不要询问用户，起点询问由 supervisor 负责）。
+2. 用 search_poi 搜索兴趣点；用 get_traffic_info 查询路况。
+3. 返回结果时，必须用如下**结构化格式**回给 supervisor（供其调用前端 update_map）：
+   先给一句话摘要（含距离/时长/路况），再附一段以 `ROUTE_DATA:` 开头的 JSON 行：
+   ROUTE_DATA: {"origin":"家","destination":"陆家嘴","origin_lat":31.218,"origin_lng":121.445,"destination_lat":31.236,"destination_lng":121.506,"distance_km":8.5,"duration_min":25,"route_coords":[[lat,lng],...],"steps":["..."]}
+   POI 搜索则返回 POI_DATA: {"pois":[{"name":"xx","lat":31.23,"lng":121.47}, ...]}
+4. 不要调用任何前端工具（update_map / select_origin），那是 supervisor 的职责。
+5. 摘要用简洁的车机语音风格，不要逐条复述全部路线步骤。"""
 
 
 def create_navigation_agent(tools: list[BaseTool]):
-    """创建导航子Agent，绑定导航 MCP 工具 + CopilotKitMiddleware 注入前端工具"""
+    """创建导航子Agent，只绑定导航 MCP 工具（前端工具由 supervisor 持有）"""
     navigation_keywords = ["plan_route", "search_poi", "traffic"]
     navigation_tools = [
         t for t in tools
         if any(kw in t.name for kw in navigation_keywords)
     ]
 
-    # CopilotKitMiddleware 会自动将前端注册的工具（useFrontendTool / useHumanInTheLoop）
-    # 注入到 Agent 的工具列表中，不需要后端手动添加 stub
     return create_agent(
         model=create_llm(temperature=0.3),
         tools=navigation_tools,
         name="navigation_agent",
         system_prompt=NAVIGATION_PROMPT,
-        middleware=[CopilotKitMiddleware()],
     )

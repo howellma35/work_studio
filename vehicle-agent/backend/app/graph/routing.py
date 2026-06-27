@@ -1,20 +1,20 @@
 """
-意图路由逻辑
-Supervisor 根据用户意图动态路由到对应子Agent
+意图路由描述
+A2 架构下，supervisor 是单一 ReAct Agent，通过调用子Agent @tool 完成路由，
+不再需要显式的 route_intent / Command 跳转。此文件仅保留注入 supervisor
+提示词的 ROUTING_DESCRIPTION。
 """
-from langgraph.types import Command
-from typing_extensions import Literal
 
-# Agent 路由映射
+# Agent 名称（供参考）
 AGENT_NAMES = ["navigation_agent", "media_agent", "vehicle_agent", "weather_agent", "reminder_agent"]
 
 # 路由描述，注入 Supervisor 提示词
 ROUTING_DESCRIPTION = """\
-你可以将任务委派给以下专业子 Agent:
+你可以调用以下专业子 Agent 工具（参数 task 为要交给该子Agent的完整任务描述）:
 
 1. **navigation_agent** - 导航专家
    适用场景：路径规划、导航到某地、搜索附近地点、查路况、预估到达时间
-   特殊行为：如用户未指定起点，会先通过 select_origin 前端工具让用户选择起点（家/公司/火车站/机场），再调用高德地图 API 规划路线
+   注意：若用户未指定起点，先由你（supervisor）调用 select_origin 让用户选择起点（家/公司/火车站/机场），拿到起点后再调用 navigation_agent("从〈起点〉导航到〈终点〉")
    示例："导航去公司"、"从家出发去机场"、"附近有加油站吗"、"去机场要多久"
 
 2. **media_agent** - 多媒体专家
@@ -34,19 +34,6 @@ ROUTING_DESCRIPTION = """\
    示例："提醒我下午3点开会"、"我有哪些待办"
 
 路由规则：
-- 根据用户意图选择最合适的子 Agent
-- 如果意图模糊，先用 FINISH 反问澄清
-- 复合请求可依次委派多个 Agent"""
-
-
-def route_intent(state) -> Command[Literal["navigation_agent", "media_agent", "vehicle_agent", "weather_agent", "reminder_agent", "__end__"]]:
-    """
-    意图路由函数
-
-    Supervisor LLM 会在 state["next"] 中输出目标 Agent 名称，
-    此函数读取该值并返回对应路由 Command。
-    """
-    goto = state.get("next", "__end__")
-    if goto not in AGENT_NAMES:
-        goto = "__end__"
-    return Command(goto=goto)
+- 根据用户意图调用最合适的子 Agent 工具
+- 如果意图模糊，先礼貌反问澄清，不要急于调用
+- 复合请求可依次调用多个子 Agent 工具"""
