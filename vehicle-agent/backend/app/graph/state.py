@@ -6,6 +6,8 @@ from typing import Annotated
 
 from copilotkit import CopilotKitState
 from langgraph.graph.message import add_messages
+from langgraph.managed import RemainingSteps
+from typing_extensions import NotRequired
 
 
 class AutoMindState(CopilotKitState):
@@ -14,7 +16,7 @@ class AutoMindState(CopilotKitState):
 
     CopilotKitState 已包含:
     - messages: 对话消息列表（带 reducer 自动累加）
-    - copilotkit_messages: CopilotKit UI 消息
+    - copilotkit: CopilotKit 前端工具/上下文通道
 
     扩展字段:
     - user_id: 当前用户标识（用于记忆系统）
@@ -23,7 +25,11 @@ class AutoMindState(CopilotKitState):
     - pending_reminders: 待处理提醒
     - current_vehicle_status: 当前车辆状态快照
     - active_agent: 当前激活的子Agent
+    - remaining_steps: Agent 剩余执行步数（create_react_agent 需要）
     """
+
+    # create_react_agent / create_supervisor 内部要求此字段
+    remaining_steps: NotRequired[RemainingSteps]
 
     user_id: str = "demo_user_001"
     user_profile: dict = {}
