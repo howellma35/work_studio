@@ -1,5 +1,18 @@
+# =============================================================
+# Mahongwei Studio — 统一 Docker Compose 部署
+# 所有服务在一个文件中管理，共享基础设施
+#
+# 启动:  docker compose up -d --build
+# 不含 Langfuse: docker compose --profile langfuse up -d --build
+# =============================================================
+
 services:
-  # Qdrant 向量数据库
+
+  # ============================================================
+  #  共享基础设施
+  # ============================================================
+
+  # Qdrant 向量数据库（主项目 RAG 知识库使用）
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -10,12 +23,29 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
 
-  # Python AI 后端（AI 聊天 + RAG 知识库）
+  # ChromaDB 向量数据库（vehicle-agent 长期记忆使用）
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    restart: always
+    ports:
+      - "${CHROMA_PORT:-8002}:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "false"
+
+  # ============================================================
+  #  主项目 — Mahongwei Studio
+  # ============================================================
+
+  # AI 后端（FastAPI + RAG 知识库）
   ai-server:
     build:
       context: ../ai-server
       dockerfile: Dockerfile
-    container_name: raggame-ai-server
+    container_name: ai-server
     restart: always
     ports:
       - "8000:8000"
@@ -26,20 +56,93 @@ services:
     depends_on:
       - qdrant
 
-  # Web 前端
+  # 主站前端（React SPA）
   web:
     build:
       context: ../web
       dockerfile: Dockerfile
-    container_name: raggame-web
+    container_name: web
     restart: always
 
-  # ===== Langfuse 可观测性平台 =====
-  # PostgreSQL 数据库
+  # ============================================================
+  #  副项目 — AutoMind 车载智能助手
+  # ============================================================
+
+  # 车载助手后端（FastAPI + LangGraph + MCP）
+  vehicle-backend:
+    build:
+      context: ../vehicle-agent/backend
+      dockerfile: Dockerfile
+    container_name: vehicle-backend
+    restart: always
+    ports:
+      - "${BACKEND_PORT:-8001}:${BACKEND_PORT:-8001}"
+    env_file:
+      - .env
+    volumes:
+      - vehicle-data:/app/data
+      - vehicle-logs:/app/logs
+
+  # CopilotKit Runtime（Express + HttpAgent）
+  vehicle-runtime:
+    build:
+      context: ../vehicle-agent/runtime
+      dockerfile: Dockerfile
+    container_name: vehicle-runtime
+    restart: always
+    ports:
+      - "${RUNTIME_PORT:-4000}:${RUNTIME_PORT:-4000}"
+    environment:
+      - RUNTIME_PORT=${RUNTIME_PORT:-4000}
+      - PYTHON_AGENT_URL=http://vehicle-backend:${BACKEND_PORT:-8001}/copilotkit
+    depends_on:
+      - vehicle-backend
+
+  # 车载助手前端（React + CopilotKit）
+  vehicle-frontend:
+    build:
+      context: ../vehicle-agent/frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://localhost:8001}
+    container_name: vehicle-frontend
+    restart: always
+    depends_on:
+      - vehicle-backend
+      - vehicle-runtime
+
+  # ============================================================
+  #  Nginx 统一反向代理
+  # ============================================================
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - ai-server
+      - web
+      - vehicle-backend
+      - vehicle-runtime
+      - vehicle-frontend
+
+  # ============================================================
+  #  Langfuse 可观测性平台（可选，用 --profile langfuse 启用）
+  #  注意：完整栈需要 ~4GB 内存，2C4G 服务器建议关闭
+  # ============================================================
+
+  # Langfuse PostgreSQL
   langfuse-db:
     image: postgres:15-alpine
     container_name: langfuse-db
     restart: unless-stopped
+    profiles: ["langfuse"]
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-changeme123}
@@ -52,11 +155,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # ClickHouse (OLAP engine for Langfuse V3)
+  # Langfuse ClickHouse
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.1-alpine
     container_name: langfuse-clickhouse
     restart: unless-stopped
+    profiles: ["langfuse"]
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: default
@@ -66,16 +170,17 @@ services:
       - langfuse-clickhouse-data:/var/lib/clickhouse
       - langfuse-clickhouse-logs:/var/log/clickhouse-server
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user default --password ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse123} --query 'SELECT 1'"
+      test: ["CMD-SHELL", "clickhouse-client --user default --password ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse123} --query 'SELECT 1'"]
       interval: 15s
       timeout: 5s
       retries: 10
 
-  # Redis (task queue + cache for Langfuse V3)
+  # Langfuse Redis
   langfuse-redis:
     image: redis:7-alpine
     container_name: langfuse-redis
     restart: unless-stopped
+    profiles: ["langfuse"]
     command: redis-server --requirepass ${LANGFUSE_REDIS_PASSWORD:-redis123}
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${LANGFUSE_REDIS_PASSWORD:-redis123}", "ping"]
@@ -85,13 +190,47 @@ services:
     volumes:
       - langfuse-redis-data:/data
 
+  # Langfuse MinIO
+  langfuse-minio:
+    image: minio/minio:latest
+    container_name: langfuse-minio
+    restart: unless-stopped
+    profiles: ["langfuse"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_ROOT_PASSWORD:-minioadmin123}
+    volumes:
+      - langfuse-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Langfuse MinIO 初始化
+  langfuse-minio-init:
+    image: minio/mc:latest
+    container_name: langfuse-minio-init
+    profiles: ["langfuse"]
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set langfuse http://langfuse-minio:9000 ${LANGFUSE_MINIO_ROOT_USER:-minioadmin} ${LANGFUSE_MINIO_ROOT_PASSWORD:-minioadmin123} &&
+      mc mb langfuse/langfuse-events --ignore-existing &&
+      exit 0
+      "
+
   # Langfuse Web 应用
   langfuse:
     image: langfuse/langfuse:3
     container_name: langfuse-app
     restart: unless-stopped
+    profiles: ["langfuse"]
     ports:
-      - "3000:3000"
+      - "${LANGFUSE_PORT:-3000}:3000"
     depends_on:
       langfuse-db:
         condition: service_healthy
@@ -118,63 +257,58 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${LANGFUSE_REDIS_PASSWORD:-redis123}
       REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:-redis123}
-      NEXTAUTH_URL: http://${SERVER_IP:-localhost}:3000
+      NEXTAUTH_URL: http://${SERVER_IP:-localhost}:${LANGFUSE_PORT:-3000}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-my-nextauth-secret-change-in-production}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-my-secret-key-change-in-production}
       SALT: ${LANGFUSE_SALT:-mysalt123}
       TELEMETRY_ENABLED: "false"
       LANGFUSE_ENABLE_SIGNUP: "true"
-      NEXT_PUBLIC_SITE_URL: http://${SERVER_IP:-localhost}:3000
+      NEXT_PUBLIC_SITE_URL: http://${SERVER_IP:-localhost}:${LANGFUSE_PORT:-3000}
 
-  # Langfuse MinIO (S3-compatible storage for V3)
-  langfuse-minio:
-    image: minio/minio:latest
-    container_name: langfuse-minio
+  # Langfuse Worker
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${LANGFUSE_MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_ROOT_PASSWORD:-minioadmin123}
-    volumes:
-      - langfuse-minio-data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Create langfuse-events bucket in MinIO
-  langfuse-minio-init:
-    image: minio/mc:latest
-    container_name: langfuse-minio-init
+    profiles: ["langfuse"]
     depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
       langfuse-minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set langfuse http://langfuse-minio:9000 ${LANGFUSE_MINIO_ROOT_USER:-minioadmin} ${LANGFUSE_MINIO_ROOT_PASSWORD:-minioadmin123} &&
-      mc mb langfuse/langfuse-events --ignore-existing &&
-      exit 0
-      "
-
-  # Nginx 反向代理
-  nginx:
-    image: nginx:alpine
-    container_name: raggame-nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    depends_on:
-      - ai-server
-      - web
+    environment:
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_ROOT_USER:-minioadmin}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_ROOT_PASSWORD:-minioadmin123}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-changeme123}@langfuse-db:5432/langfuse
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://default:${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse123}@langfuse-clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse123}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${LANGFUSE_REDIS_PASSWORD:-redis123}
+      REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:-redis123}
+      SALT: ${LANGFUSE_SALT:-mysalt123}
+      TELEMETRY_ENABLED: "false"
 
 volumes:
+  # 主项目
   ai-logs:
   qdrant-data:
+  # vehicle-agent
+  vehicle-data:
+  vehicle-logs:
+  chromadb-data:
+  # Langfuse（可选）
   langfuse-db-data:
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:
