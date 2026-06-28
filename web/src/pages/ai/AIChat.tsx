@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, Trash2, MessageSquare, Upload, Loader2, X } from 'lucide-react';
+import { Send, Plus, Trash2, MessageSquare, Upload, Loader2, X, Database } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { siteConfig } from '../../config/site';
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  file_count: number;
+}
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -38,6 +44,8 @@ export default function AIChat() {
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(siteConfig.model_options[0]?.id || '');
   const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null);
+  const [selectedKbId, setSelectedKbId] = useState('');
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +60,22 @@ export default function AIChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages.length]);
+
+  // 获取知识库列表
+  useEffect(() => {
+    const fetchKbs = async () => {
+      try {
+        const resp = await fetch('/api/knowledge/');
+        if (resp.ok) {
+          const data = await resp.json() as KnowledgeBase[];
+          setKnowledgeBases(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch knowledge bases:', err);
+      }
+    };
+    fetchKbs();
+  }, []);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -124,6 +148,7 @@ export default function AIChat() {
       const formData = new FormData();
       formData.append('message', input.trim());
       formData.append('model', selectedModel);
+      if (selectedKbId) formData.append('kb_id', selectedKbId);
       if (knowledgeFile) formData.append('knowledge_file', knowledgeFile);
 
       const currentConv = conversations.find((c) => c.id === convId);
@@ -201,12 +226,24 @@ export default function AIChat() {
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
-            className="select w-full text-xs"
+            className="select w-full text-xs mb-2"
           >
             {siteConfig.model_options.map((m) => (
               <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
             ))}
           </select>
+          {knowledgeBases.length > 0 && (
+            <select
+              value={selectedKbId}
+              onChange={(e) => setSelectedKbId(e.target.value)}
+              className="select w-full text-xs"
+            >
+              <option value="">不使用知识库</option>
+              {knowledgeBases.map((kb) => (
+                <option key={kb.id} value={kb.id}>{kb.name} ({kb.file_count} 文件)</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Conversation List */}
@@ -293,13 +330,23 @@ export default function AIChat() {
         {/* Input Area */}
         <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)] p-4 sm:px-8">
           <div className="max-w-3xl mx-auto">
-            {knowledgeFile && (
-              <div className="flex items-center gap-2 mb-2 text-xs text-[var(--color-accent)]">
-                <Upload className="h-3.5 w-3.5" />
-                <span>知识库: {knowledgeFile.name}</span>
-                <button onClick={() => setKnowledgeFile(null)} className="p-0.5 hover:bg-[var(--color-bg-soft)] rounded transition-colors">
-                  <X className="h-3 w-3" />
-                </button>
+            {(selectedKbId || knowledgeFile) && (
+              <div className="flex items-center gap-3 mb-2 text-xs text-[var(--color-accent)]">
+                {selectedKbId && (
+                  <span className="flex items-center gap-1">
+                    <Database className="h-3.5 w-3.5" />
+                    RAG: {knowledgeBases.find(kb => kb.id === selectedKbId)?.name || selectedKbId}
+                  </span>
+                )}
+                {knowledgeFile && (
+                  <span className="flex items-center gap-1">
+                    <Upload className="h-3.5 w-3.5" />
+                    文件: {knowledgeFile.name}
+                    <button onClick={() => setKnowledgeFile(null)} className="p-0.5 hover:bg-[var(--color-bg-soft)] rounded transition-colors">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
               </div>
             )}
             <div className="flex items-end gap-2">

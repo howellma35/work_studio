@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import chat, pdf
+from app.routers import chat, knowledge
+from app.services import retrieval_service
 
 
 def setup_logging() -> None:
@@ -44,14 +45,21 @@ async def lifespan(app: FastAPI):
     logging.info("AI Server 启动中...")
     logging.info(f"LLM API Base: {settings.LLM_API_BASE}")
     logging.info(f"默认模型: {settings.LLM_DEFAULT_MODEL}")
+
+    # 初始化 Qdrant 连接
+    try:
+        retrieval_service.init_qdrant()
+    except Exception as e:
+        logging.warning(f"Qdrant 连接失败（知识库功能将不可用）: {e}")
+
     yield
     logging.info("AI Server 已关闭")
 
 
 app = FastAPI(
     title="Mahongwei Studio AI Server",
-    description="AI 聊天 + PDF 解析后端服务",
-    version="1.0.0",
+    description="AI 聊天 + RAG 知识库后端服务",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -66,7 +74,7 @@ app.add_middleware(
 
 # 路由
 app.include_router(chat.router, prefix="/api/ai", tags=["AI"])
-app.include_router(pdf.router, prefix="/api/pdf", tags=["PDF"])
+app.include_router(knowledge.router, prefix="/api/knowledge", tags=["Knowledge"])
 
 
 @app.get("/api/health")

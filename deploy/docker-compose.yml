@@ -1,20 +1,16 @@
 services:
-  # Python 游戏后端（猜词游戏 WebSocket）
-  game-server:
-    build:
-      context: ../game-server
-      dockerfile: Dockerfile
-    container_name: raggame-game-server
+  # Qdrant 向量数据库
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
     restart: always
     ports:
-      - "3001:3001"
-    env_file:
-      - ../game-server/.env
+      - "6333:6333"
+      - "6334:6334"
     volumes:
-      - game-data:/app/data
-      - game-logs:/app/logs
+      - qdrant-data:/qdrant/storage
 
-  # Python AI 后端（AI 聊天 + PDF 解析）
+  # Python AI 后端（AI 聊天 + RAG 知识库）
   ai-server:
     build:
       context: ../ai-server
@@ -24,9 +20,11 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ../ai-server/.env
+      - .env
     volumes:
       - ai-logs:/app/logs
+    depends_on:
+      - qdrant
 
   # Web 前端
   web:
@@ -168,17 +166,15 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
-      - game-server
       - ai-server
       - web
 
 volumes:
-  game-data:
-  game-logs:
   ai-logs:
+  qdrant-data:
   langfuse-db-data:
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:

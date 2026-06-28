@@ -26,9 +26,6 @@ export const siteConfig = {
 
   /** AI 后端 API 基础地址（Docker 环境用相对路径，本地开发可设置环境变量） */
   aiServerUrl: import.meta.env.VITE_AI_SERVER_URL || '',
-
-  /** 游戏后端地址（猜词游戏 Socket.IO） */
-  serverUrl: import.meta.env.VITE_SERVER_URL || '/',
 };
 
 export type SiteConfig = typeof siteConfig;

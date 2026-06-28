@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, Bot, Wrench, Gamepad2, ArrowRight } from 'lucide-react';
+import { BookOpen, Bot, Database, ArrowRight } from 'lucide-react';
 
 const sections = [
   {
@@ -17,18 +17,11 @@ const sections = [
     color: 'text-violet-600 bg-violet-50',
   },
   {
-    path: '/tools',
-    title: '日常工具',
-    desc: 'PDF 解析、格式转换等实用工具',
-    icon: Wrench,
+    path: '/knowledge',
+    title: '知识库',
+    desc: '上传文档构建知识库，AI 自动检索相关内容',
+    icon: Database,
     color: 'text-emerald-600 bg-emerald-50',
-  },
-  {
-    path: '/games',
-    title: '小游戏',
-    desc: '轻松有趣的互动游戏，支持多人对战',
-    icon: Gamepad2,
-    color: 'text-orange-600 bg-orange-50',
   },
 ];
 
@@ -41,7 +34,7 @@ export default function HomePage() {
           探索 · 创造 · 连接
         </h1>
         <p className="text-[var(--color-text-secondary)] max-w-md mx-auto text-base sm:text-lg">
-          集技术博客、AI 对话、实用工具和互动游戏于一体的平台
+          集技术博客、AI 对话与 RAG 知识库于一体的平台
         </p>
         <div className="mt-8 flex items-center justify-center gap-3">
           <Link to="/ai" className="btn-primary">体验 AI 对话</Link>

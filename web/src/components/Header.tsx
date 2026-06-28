@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, BookOpen, Bot, Wrench, Gamepad2 } from 'lucide-react';
+import { Menu, X, BookOpen, Bot, Database } from 'lucide-react';
 import { siteConfig } from '../config/site';
 
 const navItems = [
   { path: '/blog', label: '博客', icon: BookOpen },
   { path: '/ai', label: 'AI 对话', icon: Bot },
-  { path: '/tools', label: '工具', icon: Wrench },
-  { path: '/games', label: '游戏', icon: Gamepad2 },
+  { path: '/knowledge', label: '知识库', icon: Database },
 ];
 
 export default function Header() {

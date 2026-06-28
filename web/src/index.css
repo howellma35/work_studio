@@ -17,9 +17,6 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
-  --color-gold: #f59e0b;
-  --color-silver: #9ca3af;
-  --color-bronze: #d97706;
 }
 
 /* === 全局基础 === */
@@ -168,32 +165,6 @@ body {
 .animate-fade-in {
   animation: fade-in 0.2s ease forwards;
 }
-
-/* === 猜词游戏 === */
-.game-countdown {
-  font-size: 48px;
-  font-weight: 700;
-  text-align: center;
-  margin: 12px 0;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-accent);
-  line-height: 1;
-}
-
-.game-countdown.urgent {
-  color: var(--color-danger);
-  animation: shake 0.5s ease infinite;
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-3px); }
-  75% { transform: translateX(3px); }
-}
-
-.rank-gold { background: var(--color-gold); color: #fff; }
-.rank-silver { background: var(--color-silver); color: #fff; }
-.rank-bronze { background: var(--color-bronze); color: #fff; }
 
 /* === 移动端侧边栏遮罩 === */
 .sidebar-backdrop {

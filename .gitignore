@@ -219,10 +219,10 @@ __marimo__/
 
 # Project specific
 ai-server/logs/
-game-server/logs/
-game-server/data/guesses.json
-server/logs/
 web/.env.local
 node_modules/
 .venv/
 venv/
+qdrant_data/
+deploy/.env
+web\node_modules

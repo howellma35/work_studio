@@ -4,7 +4,7 @@
 
 ### 前端（Vite 开发模式）
 - 浏览器控制台：F12 → Console 面板
-- 网络请求：F12 → Network 面板（查看 API 请求和 WebSocket 连接）
+- 网络请求：F12 → Network 面板（查看 API 请求）
 - 终端输出：Vite 构建和 HMR 信息
 
 ### AI 后端 (ai-server)
@@ -21,18 +21,7 @@ docker compose exec ai-server cat /app/logs/app.log
 **日志格式**：`时间 | 级别 | 模块 | 消息`
 ```
 2025-01-01 12:00:00 | INFO    | app.main | AI Server 启动中...
-2025-01-01 12:00:01 | INFO    | app.services.llm_service | LLM call: model=gpt-4o-mini
-```
-
-### 游戏后端 (game-server)
-```bash
-# 本地开发 — 终端直接输出
-
-# Docker 部署
-docker compose logs -f game-server
-
-# 容器内文件日志
-docker compose exec game-server cat /app/logs/game.log
+2025-01-01 12:00:01 | INFO    | app.services.llm_service | LLM call: model=deepseek-v4-flash
 ```
 
 ---
@@ -67,7 +56,7 @@ docker compose logs ai-server
 # 3. 手动测试 API
 curl -X POST http://localhost:8000/api/ai/chat \
   -F "message=你好" \
-  -F "model=gpt-4o-mini" \
+  -F "model=deepseek-v4-flash" \
   -F "history=[]"
 ```
 
@@ -82,50 +71,45 @@ curl -X POST http://localhost:8000/api/ai/chat \
 
 ---
 
-### 3. PDF 解析失败
+### 3. 知识库文件上传失败
 
 **排查步骤**：
 
 ```bash
 # 手动测试
-curl -X POST http://localhost:8000/api/pdf/parse \
+curl -X POST http://localhost:8000/api/knowledge/test-kb/files \
   -F "file=@test.pdf"
+
+# 检查 Qdrant 是否运行
+curl http://localhost:6333/collections
 ```
 
 **常见原因**：
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
-| `请上传 PDF 格式文件` | 上传的不是 PDF | 确认文件格式 |
-| `PDF 解析失败` | 文件是扫描件 | 使用文字型 PDF（非图片扫描） |
-| 超时 | 文件过大 | 确保文件 ≤ 50MB |
-| 提取内容为空 | PDF 无可提取文本 | 尝试其他 PDF 文件 |
+| `Qdrant 连接失败` | Qdrant 未启动 | 启动 Qdrant 服务 |
+| `Embedding API 调用失败` | API Key 无效 | 检查 `EMBEDDING_API_KEY` |
+| 上传超时 | 文件过大 | 确保文件 ≤ 100MB |
+| 解析内容为空 | 文件格式不支持或无可提取文本 | 确认文件格式（PDF/DOCX/TXT/MD/CSV/HTML） |
 
 ---
 
-### 4. WebSocket 连接失败（猜词游戏）
+### 4. RAG 问答结果不准确
 
 **排查步骤**：
 
-```bash
-# 1. 检查游戏后端是否正常运行
-curl http://localhost:3001/api/health
+1. 确认知识库中已上传相关文档
+2. 检查 Qdrant 面板（`http://localhost:6333/dashboard`）查看向量数据
+3. 查看日志中的检索结果，确认检索到了相关文档片段
 
-# 2. 检查浏览器 Network → WS 面板
-#    确认 Socket.IO 握手请求是否成功
+**优化方向**：
 
-# 3. Docker 环境检查 Nginx 代理
-# 确认 /socket.io/ 路径代理到 game_backend
-```
-
-**常见原因**：
-
-| 现象 | 原因 | 解决 |
-|------|------|------|
-| 连接超时 | 游戏后端未启动 | 启动 game-server |
-| 连接被拒绝 | 端口未开放 | 检查防火墙和端口监听 |
-| 连接后无消息 | Socket.IO 事件不匹配 | 检查浏览器控制台错误 |
-| Docker 下连接失败 | Nginx WebSocket 代理缺失 | 检查 nginx.conf 中 `/socket.io/` 配置 |
+| 问题 | 可能原因 | 调整 |
+|------|---------|------|
+| 检索不到相关内容 | 分块太大导致语义模糊 | 减小 `CHUNK_SIZE`（默认 500） |
+| 检索到但不相关 | top_k 太少 | 增大检索数量 |
+| 回答忽略上下文 | 系统 prompt 权重不够 | 调整 prompt 模板 |
 
 ---
 
@@ -155,28 +139,7 @@ netstat -tlnp  # Linux
 
 ---
 
-### 6. Embedding API 调用失败（猜词游戏）
-
-**现象**：所有猜测相似度都很低或返回错误。
-
-**排查步骤**：
-
-```bash
-# 手动测试 SiliconFlow API
-curl -X POST https://api.siliconflow.cn/v1/embeddings \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"BAAI/bge-m3","input":["测试"]}'
-```
-
-**解决**：
-1. 确认 `game-server/.env` 中 `EMBEDDING_API_KEY` 有效
-2. 检查网络是否能访问 API 端点
-3. 如不配置 API Key，系统自动回退到编辑距离匹配（精度较低但可用）
-
----
-
-### 7. 前端 API 请求 404（本地开发）
+### 6. 前端 API 请求 404（本地开发）
 
 **原因**：Vite 代理未生效。
 
@@ -188,7 +151,7 @@ curl -X POST https://api.siliconflow.cn/v1/embeddings \
 
 ---
 
-### 8. 修改代码后 Docker 未更新
+### 7. 修改代码后 Docker 未更新
 
 **原因**：Docker 使用构建缓存。
 
@@ -196,21 +159,8 @@ curl -X POST https://api.siliconflow.cn/v1/embeddings \
 ```bash
 # 重新构建指定服务
 docker compose up -d --build ai-server
-docker compose up -d --build game-server
 docker compose up -d --build web
 ```
-
----
-
-## 性能优化建议
-
-| 方面 | 建议 |
-|------|------|
-| 前端 | Vite 已自动代码分割和 tree-shaking，无需额外配置 |
-| Nginx | 已配置 gzip 压缩和静态资源缓存 |
-| AI 后端 | 大模型请求可设置合理的 `max_tokens` 减少输出长度 |
-| 游戏后端 | 内存排行榜适合小规模使用；若需大规模场景可引入 Redis |
-| Embedding | 词库 embedding 会缓存到内存中，避免重复调用 API |
 
 ---
 
@@ -232,14 +182,14 @@ localStorage.getItem('cookie_consent_accepted')
 # 访问 http://localhost:8000/docs
 ```
 
-### 游戏后端调试
+### Qdrant 调试
 ```bash
-# 查看词库
-curl http://localhost:3001/api/game/words
+# 查看所有集合
+curl http://localhost:6333/collections
 
-# 按分类筛选
-curl http://localhost:3001/api/game/words?category=fruit
+# 查看集合详情
+curl http://localhost:6333/collections/{collection_name}
 
-# 按难度筛选
-curl http://localhost:3001/api/game/words?difficulty=2
+# 访问 Web 面板
+# http://localhost:6333/dashboard
 ```
