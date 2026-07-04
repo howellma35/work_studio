@@ -44,8 +44,8 @@ export default function HomePage() {
 
       {/* ★ 最新功能：AutoMind 智能车机助手 ★ */}
       <section className="mb-10">
-        <Link
-          to="/vehicle/"
+        <a
+          href="/vehicle/"
           className="block rounded-2xl overflow-hidden border border-slate-700/40 group transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/10 hover:border-blue-500/40"
           style={{
             background: 'linear-gradient(135deg, #0c1222 0%, #1a1a3e 50%, #0f172a 100%)',
@@ -94,7 +94,7 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </Link>
+        </a>
       </section>
 
       {/* 常规板块 */}
