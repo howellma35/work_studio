@@ -1,4 +1,4 @@
-# Docker 容器化部署方案
+# Docker 容器化部署方案（Ubuntu 24.04）
 
 ## 前置要求
 
@@ -6,6 +6,7 @@
 |------|---------|------|
 | Docker | 24+ | 容器运行时 |
 | Docker Compose | 2+ | 多服务编排 |
+| Ubuntu | 24.04 LTS | 服务器操作系统 |
 | SSL 证书 | — | Let's Encrypt 或商业证书 |
 
 ---
@@ -14,9 +15,12 @@
 
 ```
 用户请求 → Nginx (80/443)
-  ├── /                   → Web 前端 (React SPA)
-  ├── /api/ai/*           → AI 后端 (FastAPI，大模型对话 + RAG)
-  └── /api/knowledge/*    → AI 后端 (FastAPI，知识库管理)
+  ├── /                       → Web 前端 (React SPA)
+  ├── /api/ai/*               → AI 后端 (FastAPI，大模型对话 + RAG)
+  ├── /api/knowledge/*        → AI 后端 (FastAPI，知识库管理)
+  ├── /vehicle/*              → 车载助手前端 (React + CopilotKit)
+  ├── /api/vehicle/*          → 车载助手后端 (FastAPI + LangGraph)
+  └── /api/copilotkit         → CopilotKit Runtime (WebSocket)
 ```
 
 ---
@@ -25,44 +29,173 @@
 
 | 服务 | 容器名 | 端口 | 技术栈 | 说明 |
 |------|--------|------|--------|------|
-| nginx | raggame-nginx | 80, 443 | Nginx Alpine | 反向代理 + SSL 终结 |
-| web | raggame-web | 80 (内部) | Nginx + React SPA | 前端静态资源 |
-| ai-server | raggame-ai-server | 8000 | Python FastAPI | AI 聊天 + RAG 知识库 |
-| qdrant | qdrant | 6333, 6334 | Qdrant | 向量数据库 |
-| langfuse | langfuse-app | 3000 | Langfuse V3 | LLM 可观测性平台 |
+| nginx | nginx | 80, 443 | Nginx Alpine | 反向代理 + SSL 终结 |
+| web | web | 80 (内部) | Nginx + React SPA | 主站前端 |
+| ai-server | ai-server | 8000 | Python FastAPI | AI 聊天 + RAG 知识库 |
+| vehicle-backend | vehicle-backend | 8001 | Python FastAPI + LangGraph | 车载助手后端 |
+| vehicle-runtime | vehicle-runtime | 4000 | Express + CopilotKit | CopilotKit Runtime |
+| vehicle-frontend | vehicle-frontend | 80 (内部) | React + CopilotKit | 车载助手前端 |
+| qdrant | qdrant | 6333 | Qdrant | 向量数据库 |
+| chromadb | chromadb | 8002 | ChromaDB | 长期记忆向量库 |
+| langfuse | langfuse-app | 3000 | Langfuse V3 | LLM 可观测性（可选） |
 
 ---
 
-## 部署步骤
+## 第一部分：服务器基础环境配置
+
+### 1. 切换阿里云镜像源
+
+```bash
+sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.bak 2>/dev/null || true
+
+sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null << 'EOF'
+Types: deb
+URIs: https://mirrors.aliyun.com/ubuntu
+Suites: noble noble-updates noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb-src
+URIs: https://mirrors.aliyun.com/ubuntu
+Suites: noble noble-updates noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+
+sudo apt update && sudo apt upgrade -y
+```
+
+### 2. 安装基础工具
+
+```bash
+sudo apt install -y curl wget git nano htop unzip jq lsof \
+    software-properties-common apt-transport-https ca-certificates gnupg
+```
+
+### 3. 安装 Docker（阿里云源）
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker-aliyun.gpg
+sudo chmod a+r /etc/apt/keyrings/docker-aliyun.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker-aliyun.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu noble stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo usermod -aG docker $USER
+# 重新登录 SSH 使 docker 组生效
+```
+
+### 4. 配置 Docker 镜像加速
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
+{
+    "registry-mirrors": [
+        "https://docker.1ms.run",
+        "https://docker.xuanyuan.me"
+    ],
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+    }
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+### 5. 安装 Node.js 22 LTS
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+sudo apt install -y nodejs
+npm config set registry https://registry.npmmirror.com
+```
+
+### 6. 配置防火墙 (UFW)
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow ssh          # 22
+sudo ufw allow 80/tcp       # HTTP
+sudo ufw allow 443/tcp      # HTTPS
+sudo ufw --force enable
+sudo ufw status verbose
+```
+
+### 7. 时区与 Swap
+
+```bash
+sudo timedatectl set-timezone Asia/Shanghai
+sudo timedatectl set-ntp true
+
+# 如果 Swap 不足 1GB，创建 4GB Swap
+CURRENT_SWAP=$(free -m | awk '/^Swap:/ {print $2}')
+if [ -z "$CURRENT_SWAP" ] || [ "$CURRENT_SWAP" -lt 1024 ]; then
+    sudo fallocate -l 4G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+    sudo sysctl -p
+fi
+```
+
+### 8. 申请 SSL 证书
+
+```bash
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d mahongwei.com.cn
+# 证书存放在: /etc/letsencrypt/live/mahongwei.com.cn/
+
+# 设置自动续期（每 90 天）
+echo "0 3 * * * certbot renew --quiet --deploy-hook 'docker compose -f /path/to/deploy/docker-compose.yml restart nginx'" | sudo tee -a /var/spool/cron/crontabs/root
+
+
+
+2. 安装 snap（如果没有的话）
+sudo apt install -y snapd
+
+# 3. 用 snap 安装 certbot（最新版，兼容 Python 3.14）
+sudo snap install --classic certbot
+
+# 4. 创建软链接
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+
+# 5. 重新申请证书
+sudo certbot certonly --standalone -d mahongwei.com.cn
+```
+
+---
+
+## 第二部分：部署项目
 
 ### 1. 准备环境变量
 
 ```bash
-cd deploy
+cd /path/to/project/deploy
 cp .env.example .env
-vim .env
-# 必须填入: LLM_API_KEY, LLM_API_BASE, EMBEDDING_API_KEY
-# 可选修改: Langfuse 密码、数据库密码等
+nano .env
 ```
 
-### 2. 准备 SSL 证书
+**必须填入的变量：**
 
-将证书放到服务器 `/etc/letsencrypt/live/你的域名/` 目录，或修改 `deploy/nginx/nginx.conf` 中的证书路径。
+```ini
+# LLM 大模型 API Key（阿里云 DashScope）
+LLM_API_KEY=sk-xxxxxxxxxxxxxxxx
 
-如果使用 Let's Encrypt：
-```bash
-# 安装 certbot
-apt install certbot
+# Embedding 向量 API Key（SiliconFlow）
+EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxx
 
-# 获取证书（先停 nginx 或用 webroot 模式）
-certbot certonly --standalone -d 你的域名
+# 服务器公网 IP
+SERVER_IP=106.14.24.38
 ```
 
-### 3. 修改域名
-
-编辑 `deploy/nginx/nginx.conf`，将所有 `mahongwei.com.cn` 替换为你的域名。
-
-### 4. 构建并启动
+### 2. 构建并启动
 
 ```bash
 cd deploy
@@ -77,23 +210,641 @@ docker compose ps
 docker compose logs -f
 ```
 
-### 5. 验证
+### 3. 验证部署
 
 ```bash
 # 健康检查
-curl https://你的域名/api/health
+curl https://mahongwei.com.cn/api/health
 
-# 浏览器访问
-# https://你的域名
+# 车载助手
+curl https://mahongwei.com.cn/vehicle/
+
+# 查看各服务日志
+docker compose logs -f ai-server
+docker compose logs -f vehicle-backend
 ```
 
 ---
 
-## 常用运维命令
+## 第三部分：内网穿透（frp）
+
+### 什么是内网穿透？为什么需要它？
+
+**场景举例**：
+
+你在家里电脑上开发，项目跑在 `localhost:8001`。想让同事或客户用手机浏览器看效果，但你的电脑没有公网 IP（运营商给你的是一个内网地址 `192.168.x.x` 或 `10.x.x.x`），外面的人访问不到。
+
+**内网穿透的作用**：
+
+通过一台有公网 IP 的服务器（阿里云 ECS）做"中转站"，把你本地的服务"映射"到公网上。
+
+**用比喻来说**：
+```
+你的电脑（家里）        →  快递柜（阿里云服务器）  →  客户（手机访问）
+localhost:8001             公网 IP:6001               http://公网IP:6001
+```
+客户访问 `http://106.14.24.38:6001`，请求会被转发到你家里的 `localhost:8001`。
+
+### 当前网络拓扑
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         互联网 (公网)                            │
+│                                                                 │
+│  手机/电脑用户                                                   │
+│       │                                                         │
+│       │  访问 http://106.14.24.38:6001                          │
+│       ▼                                                         │
+│  ┌────────────────────────────────────────────┐                 │
+│  │  阿里云 ECS (106.14.24.38)                  │                │
+│  │  ─────────────────────────                  │                │
+│  │  • 公网 IP，24 小时在线                      │                │
+│  │  • 运行 frps (服务端) 监听 7000 端口         │                │
+│  │  • 转发请求到内网机器                        │                │
+│  │  • 开放端口：7000, 6000, 6001, 6002, 7500   │                │
+│  └─────────────────┬──────────────────────────┘                 │
+│                    │                                            │
+│                    │  ← frp 加密隧道 (TCP 长连接) →              │
+│                    │                                            │
+└────────────────────┼────────────────────────────────────────────┘
+                     │
+          ┌──────────┴──────────┐
+          │  家里/公司内网         │
+          │  (192.168.31.x)      │
+          │                      │
+          │  内网机器              │
+          │  192.168.31.101       │
+          │  ──────────────       │
+          │  • 运行 frpc (客户端)  │
+          │  • 主动连接 frps      │
+          │  • 转发本地服务        │
+          │                      │
+          │  本地服务：            │
+          │  • localhost:5173     │  Vite 前端
+          │  • localhost:8001     │  车载助手后端
+          │  • localhost:8000     │  AI 后端
+          │  • localhost:4000     │  CopilotKit Runtime
+          └──────────────────────┘
+```
+
+### 工作原理（一步步解释）
+
+```
+第 1 步：frpc 启动后，主动连接 frps 的 7000 端口，建立一条"隧道"
+         192.168.31.101 ──────────→ 106.14.24.38:7000
+
+第 2 步：frpc 告诉 frps："我要把本地 8001 端口映射到你的 6001 端口"
+         frpc 发送配置给 frps
+
+第 3 步：外网用户访问 http://106.14.24.38:6001
+         请求到达阿里云服务器
+
+第 4 步：frps 收到请求，通过"隧道"转发给 frpc
+         106.14.24.38:6001 ──────隧道──────→ 192.168.31.101
+
+第 5 步：frpc 收到请求，转发给本地 localhost:8001
+         192.168.31.101 ──────→ localhost:8001
+
+第 6 步：本地服务处理请求，返回响应
+         响应沿着原路返回：本地 → frpc → 隧道 → frps → 用户
+```
+
+---
+
+### 1. 阿里云 ECS 安装 frps（服务端）
+
+SSH 登录到阿里云服务器（106.14.24.38）执行：
+
+#### 1.1 下载并安装
 
 ```bash
+# 下载 frp（选最新版本，以 0.61.0 为例）
+cd /tmp
+wget https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_linux_amd64.tar.gz
+
+# 解压
+tar -xzf frp_0.61.0_linux_amd64.tar.gz
+
+# 安装 frps 到系统目录
+sudo cp frp_0.61.0_linux_amd64/frps /usr/local/bin/
+
+# 创建配置目录
+sudo mkdir -p /etc/frp
+
+# 验证安装
+frps --version
+# 应输出: frps version 0.61.0
+```
+
+#### 1.2 生成通信密钥
+
+```bash
+# 生成一个随机 token（客户端和服务端必须一致）
+openssl rand -hex 16
+# 输出示例: a3f8b2c1d4e5f6a7b8c9d0e1f2a3b4c5
+# 复制这串字符，下面配置要用
+```
+
+#### 1.3 配置 frps（服务端）
+
+```bash
+sudo nano /etc/frp/frps.toml
+```
+
+写入以下内容：
+
+```bash
+# ===== frps 服务端配置 =====
+
+# 监听端口，frpc 客户端会连接这个端口
+bindPort = 7000
+
+# 通信认证（客户端必须用同样的 token 才能连接）
+auth.method = "token"
+auth.token = "a3f8b2c1d4e5f6a7b8c9d0e1f2a3b4c5"   # ← 换成你生成的 token
+
+# Dashboard 管理面板（可选，方便查看连接状态）
+webServer.addr = "0.0.0.0"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "StrongP@ssw0rd123"   # ← 改成强密码
+
+# 日志配置
+log.to = "/var/log/frps.log"
+log.level = "info"
+log.maxDays = 7
+```
+
+#### 1.4 创建 systemd 服务（开机自启）
+
+```bash
+sudo tee /etc/systemd/system/frps.service > /dev/null << 'EOF'
+[Unit]
+Description=frp Server (内网穿透服务端)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/frps -c /etc/frp/frps.toml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 重载 systemd 配置
+sudo systemctl daemon-reload
+
+# 设置开机自启
+sudo systemctl enable frps
+
+# 立即启动
+sudo systemctl start frps
+
+# 查看状态
+sudo systemctl status frps
+```
+
+看到 `active (running)` 就成功了。
+
+#### 1.5 配置防火墙（两层都要开）
+
+**第一层：UFW 系统防火墙**
+
+```bash
+# 放行 frp 通信端口
+sudo ufw allow 7000/tcp    # frpc 连接 frps 用的
+
+# 放行穿透端口（根据 frpc 配置调整）
+sudo ufw allow 6000/tcp    # AI 后端
+sudo ufw allow 6001/tcp    # 车载助手后端
+sudo ufw allow 6002/tcp    # CopilotKit Runtime
+
+# 放行 Dashboard（可选）
+sudo ufw allow 7500/tcp
+
+# 查看状态
+sudo ufw status verbose
+```
+
+**第二层：阿里云安全组**
+
+1. 登录 [阿里云控制台](https://ecs.console.aliyun.com)
+2. 找到你的 ECS 实例 → **安全组** → **配置规则**
+3. **入方向** → **手动添加**：
+
+| 授权策略 | 协议类型 | 端口范围 | 授权对象 | 说明 |
+|---------|---------|---------|---------|------|
+| 允许 | TCP | 7000/7000 | 0.0.0.0/0 | frp 通信端口 |
+| 允许 | TCP | 6000/6000 | 0.0.0.0/0 | AI 后端穿透 |
+| 允许 | TCP | 6001/6001 | 0.0.0.0/0 | 车载助手后端穿透 |
+| 允许 | TCP | 6002/6002 | 0.0.0.0/0 | CopilotKit Runtime 穿透 |
+| 允许 | TCP | 7500/7500 | 你的 IP/32 | frp Dashboard（建议限制 IP） |
+
+#### 1.6 验证服务端是否正常工作
+
+```bash
+# 查看 frps 日志
+sudo journalctl -u frps -f --no-pager
+
+# 或者查看日志文件
+tail -f /var/log/frps.log
+
+# 检查端口是否在监听
+sudo ss -tlnp | grep -E "7000|7500|6000|6001|6002"
+# 应看到:
+# LISTEN  0  128  *:7000  *  users:(("frps",pid=xxx))
+# LISTEN  0  128  *:7500  *  users:(("frps",pid=xxx))
+```
+
+---
+
+### 2. 内网机器安装 frpc（客户端）
+
+在 **192.168.31.101** 这台机器上操作。
+
+#### 2.1 下载安装
+
+**Windows 系统（你的开发机）：**
+
+```powershell
+# 1. 下载 Windows 版本
+# 浏览器打开: https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_windows_amd64.zip
+
+# 2. 解压到 C:\frp（或你喜欢的位置）
+# 解压后得到: frpc.exe 和 frpc.toml
+
+# 3. 创建配置文件 C:\frp\frpc.toml（见下一步）
+```
+
+**Linux 系统：**
+
+```bash
+cd /tmp
+wget https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_linux_amd64.tar.gz
+tar -xzf frp_0.61.0_linux_amd64.tar.gz
+sudo cp frp_0.61.0_linux_amd64/frpc /usr/local/bin/
+sudo mkdir -p /etc/frp
+frpc --version
+```
+
+#### 2.2 配置 frpc（客户端）
+
+**Windows 路径**：`C:\frp\frpc.toml`  
+**Linux 路径**：`/etc/frp/frpc.toml`
+
+```bash
+nano /etc/frp/frpc.toml   # Linux
+# 或用记事本编辑 C:\frp\frpc.toml   # Windows
+```
+
+写入以下内容：
+
+```toml
+# ===== frpc 客户端配置 =====
+
+# 连接阿里云 ECS 的 frps 服务端
+serverAddr = "106.14.24.38"
+serverPort = 7000
+
+# 通信认证（必须和 frps 的 token 完全一致）
+auth.method = "token"
+auth.token = "a3f8b2c1d4e5f6a7b8c9d0e1f2a3b4c5"   # ← 和 frps 一样
+
+# 日志配置
+log.to = "/var/log/frpc.log"
+log.level = "info"
+log.maxDays = 7
+
+# ================================================================
+# 穿透规则配置
+# 每增加一个 [[proxies]] 就是增加一条穿透规则
+# ================================================================
+
+# ----- 规则 1：穿透 Vite 前端开发服务器 -----
+# 用 HTTP 类型，支持域名访问（需要 DNS 解析）
+[[proxies]]
+name = "web-dev"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 5173                    # 本地 Vite 端口
+customDomains = ["dev.mahongwei.com.cn"]   # 访问域名
+
+# ----- 规则 2：穿透车载助手后端 -----
+# 用 TCP 类型，直接映射端口
+[[proxies]]
+name = "vehicle-backend"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8001                    # 本地后端端口
+remotePort = 6001                   # 公网访问端口
+
+# ----- 规则 3：穿透 AI 后端 -----
+[[proxies]]
+name = "ai-server"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8000
+remotePort = 6000
+
+# ----- 规则 4：穿透 CopilotKit Runtime -----
+[[proxies]]
+name = "vehicle-runtime"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 4000
+remotePort = 6002
+```
+
+#### 2.3 配置 DNS（如果使用域名访问）
+
+如果你想用 `dev.mahongwei.com.cn` 访问内网穿透的前端：
+
+1. 登录 [阿里云 DNS 控制台](https://dns.console.aliyun.com)
+2. 找到 `mahongwei.com.cn` → **解析设置**
+3. **添加记录**：
+
+| 记录类型 | 主机记录 | 记录值 | TTL |
+|---------|---------|--------|-----|
+| A | dev | 106.14.24.38 | 10 分钟 |
+
+等待几分钟后生效。
+
+#### 2.4 启动 frpc
+
+**Linux（systemd 服务）：**
+
+```bash
+# 创建 systemd 服务文件
+sudo tee /etc/systemd/system/frpc.service > /dev/null << 'EOF'
+[Unit]
+Description=frp Client (内网穿透客户端)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/frpc -c /etc/frp/frpc.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable frpc
+sudo systemctl start frpc
+sudo systemctl status frpc
+```
+
+**Windows（手动运行或注册服务）：**
+
+```powershell
+# 方式 1：手动运行（测试用）
+cd C:\frp
+.\frpc.exe -c .\frpc.toml
+# 看到 "login to server success" 就表示连接成功
+# 按 Ctrl+C 停止
+
+# 方式 2：注册为 Windows 服务（开机自启）
+# 先安装 nssm
+winget install nssm
+
+# 注册服务（注意路径要改成你实际的位置）
+nssm install frpc "C:\frp\frpc.exe" "-c" "C:\frp\frpc.toml"
+nssm set frpc AppDirectory "C:\frp"
+nssm start frpc
+
+# 查看服务状态
+nssm status frpc
+```
+
+#### 2.5 验证连接是否成功
+
+**在 frpc 端查看日志：**
+
+```bash
+# Linux
+sudo journalctl -u frpc -f --no-pager
+
+# Windows（命令行窗口会直接输出）
+# 看到类似以下内容表示成功：
+# [I] login to server success
+# [I] [vehicle-backend] start proxy success
+# [I] [ai-server] start proxy success
+```
+
+**在阿里云 ECS 上查看 Dashboard：**
+
+浏览器打开 `http://106.14.24.38:7500`，输入 admin 和密码，可以看到：
+- 当前连接的客户端数量
+- 每条穿透规则的状态
+- 流量统计
+
+---
+
+### 3. 访问验证
+
+#### 3.1 测试清单
+
+| 测试项 | 命令/操作 | 预期结果 |
+|-------|--------|---------|
+| frps 运行状态 | `systemctl status frps` | active (running) |
+| frpc 连接状态 | frpc 日志看到 "login success" | 连接成功 |
+| Dashboard 可访问 | 浏览器打开 `http://106.14.24.38:7500` | 看到管理面板 |
+| AI 后端穿透 | `curl http://106.14.24.38:6000/api/health` | 返回健康检查 |
+| 车载助手穿透 | `curl http://106.14.24.38:6001/api/vehicle/health` | 返回健康检查 |
+| 前端域名访问 | 浏览器打开 `http://dev.mahongwei.com.cn` | 看到前端页面 |
+
+#### 3.2 从外网测试
+
+```bash
+# 在任意外网机器上测试
+curl -v http://106.14.24.38:6001/api/vehicle/health
+
+# 如果返回超时或连接拒绝，按下面的"故障排查"步骤检查
+```
+
+---
+
+### 4. 故障排查
+
+#### 问题 1：frpc 无法连接 frps
+
+**症状**：`login to server failed`
+
+**排查步骤**：
+```bash
+# 1. 检查 frps 是否在运行
+# 在阿里云 ECS 上
+sudo systemctl status frps
+sudo ss -tlnp | grep 7000
+
+# 2. 检查阿里云安全组是否开放 7000 端口
+# 登录阿里云控制台查看
+
+# 3. 检查 UFW 是否开放 7000
+sudo ufw status | grep 7000
+
+# 4. 检查 token 是否一致
+# frps 和 frpc 的 auth.token 必须完全相同
+
+# 5. 检查网络连通性
+# 在内网机器上
+telnet 106.14.24.38 7000
+# 或
+nc -zv 106.14.24.38 7000
+```
+
+#### 问题 2：外网无法访问穿透端口
+
+**症状**：`curl http://106.14.24.38:6001` 超时
+
+**排查步骤**：
+```bash
+# 1. 在阿里云 ECS 上检查端口是否被监听
+sudo ss -tlnp | grep 6001
+# 应该看到 frps 在监听
+
+# 2. 检查 UFW 和阿里云安全组是否都开放了该端口
+
+# 3. 检查本地服务是否在运行
+# 在内网机器上
+curl http://localhost:8001/api/vehicle/health
+
+# 4. 查看 frpc 日志，看代理是否启动成功
+sudo journalctl -u frpc -n 50
+```
+
+#### 问题 3：域名无法访问
+
+**症状**：`http://dev.mahongwei.com.cn` 打不开
+
+**排查步骤**：
+```bash
+# 1. 检查 DNS 是否解析到阿里云服务器
+ping dev.mahongwei.com.cn
+# 应返回 106.14.24.38
+
+# 2. 等待 DNS 生效（新添加的 A 记录可能需要 10 分钟）
+
+# 3. 检查 frpc 配置中 customDomains 是否和访问域名一致
+```
+
+---
+
+### 5. 常用运维命令
+
+```bash
+# ==================== 阿里云 ECS (frps) ====================
+
+# 查看服务状态
+sudo systemctl status frps
+
+# 重启服务
+sudo systemctl restart frps
+
+# 查看实时日志
+sudo journalctl -u frps -f
+
+# 查看最近 100 行日志
+sudo journalctl -u frps -n 100
+
+# 停止服务
+sudo systemctl stop frps
+
+# 查看端口监听情况
+sudo ss -tlnp | grep -E "7000|6000|6001|6002"
+
+
+# ==================== 内网机器 (frpc) ====================
+
+# 查看服务状态
+sudo systemctl status frpc
+
+# 重启服务（修改配置后）
+sudo systemctl restart frpc
+
+# 查看实时日志
+sudo journalctl -u frpc -f
+
+# 查看最近 100 行日志
+sudo journalctl -u frpc -n 100
+
+# 停止服务
+sudo systemctl stop frpc
+
+# Windows 上查看服务状态
+nssm status frpc
+```
+
+---
+
+### 6. 添加/删除穿透规则
+
+**添加新规则**：
+
+编辑 frpc 配置文件，在末尾添加：
+```toml
+# 新规则：穿透某个新服务
+[[proxies]]
+name = "new-service"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 9000        # 新服务的本地端口
+remotePort = 6003       # 公网访问端口（确保没被占用）
+```
+
+然后重启 frpc：
+```bash
+sudo systemctl restart frpc
+```
+
+**同时记得**：在阿里云安全组和 UFW 中开放 `6003` 端口。
+
+**删除规则**：直接删除对应的 `[[proxies]]` 段落，然后重启 frpc。
+
+---
+
+### 7. 安全建议
+
+| 建议 | 说明 |
+|------|------|
+| **使用强 token** | 不要用 `123456` 或 `password`，用 `openssl rand -hex 16` 生成 |
+| **限制 Dashboard 访问** | 7500 端口在安全组中只允许你的 IP 访问，不要开放给 `0.0.0.0/0` |
+| **定期更换 token** | 每季度换一次，同时更新 frps 和 frpc 的配置 |
+| **不要穿透敏感服务** | 不要把数据库端口、SSH 端口穿透到公网 |
+| **用完就关** | 调试演示结束后，`sudo systemctl stop frpc` 关闭穿透 |
+
+---
+
+### 8. 完整配置对照表
+
+| 配置项 | frps (服务端) | frpc (客户端) |
+|--------|--------------|--------------|
+| 位置 | 阿里云 ECS (106.14.24.38) | 内网机器 (192.168.31.101) |
+| 程序 | `/usr/local/bin/frps` | `/usr/local/bin/frpc` 或 `C:\frp\frpc.exe` |
+| 配置文件 | `/etc/frp/frps.toml` | `/etc/frp/frpc.toml` 或 `C:\frp\frpc.toml` |
+| 服务管理 | `systemctl start/stop/restart frps` | `systemctl start/stop/restart frpc` 或 `nssm` |
+| 日志位置 | `/var/log/frps.log` 或 `journalctl -u frps` | `/var/log/frpc.log` 或 `journalctl -u frpc` |
+| Dashboard | `http://106.14.24.38:7500` | — |
+
+---
+
+## 第四部分：常用运维命令
+
+```
+# 查看所有容器状态
+docker compose ps
+
 # 查看单个服务日志
 docker compose logs -f ai-server
+docker compose logs -f vehicle-backend
 docker compose logs -f qdrant
 
 # 重启单个服务
@@ -113,6 +864,9 @@ docker compose down -v
 
 # 清理构建缓存
 docker compose build --no-cache
+
+# 启动 Langfuse 可观测性（可选，需要 4GB+ 内存）
+docker compose --profile langfuse up -d --build
 ```
 
 ---
@@ -123,6 +877,9 @@ docker compose build --no-cache
 |--------|---------|------|
 | ai-logs | /app/logs | AI 后端日志 |
 | qdrant-data | /qdrant/storage | 向量数据库持久化存储 |
+| chromadb-data | /chroma/chroma | 车载助手长期记忆 |
+| vehicle-data | /app/data | 车载助手数据（SQLite） |
+| vehicle-logs | /app/logs | 车载助手日志 |
 | langfuse-db-data | /var/lib/postgresql/data | Langfuse PostgreSQL |
 | langfuse-clickhouse-data | /var/lib/clickhouse | Langfuse ClickHouse |
 | langfuse-redis-data | /data | Langfuse Redis |
@@ -134,6 +891,8 @@ docker compose build --no-cache
 
 1. **SSL 证书更新**：Let's Encrypt 证书每 90 天需更新，更新后 `docker compose restart nginx`
 2. **日志查看**：容器内日志文件位于 `/app/logs/` 目录
-3. **端口冲突**：确保宿主机 80/443/6333/8000/3000 端口未被占用
-4. **环境变量**：`.env` 文件不要提交到 Git（已在 .gitignore 中排除）
+3. **端口冲突**：确保宿主机 80/443/6333/8000/8001/3000/4000 端口未被占用
+4. **环境变量**：`.env` 文件不要提交到 Git（已在 .gitignore 中排除），所有密钥、密码必须在 `.env` 中配置
 5. **知识库数据**：Qdrant 数据持久化在 `qdrant-data` 卷中，删除卷将丢失所有知识库数据
+6. **内网穿透安全**：frp token 务必设置强密码，不要暴露到公网 7500 端口（Dashboard）
+7. **Redis 配置**：如果使用 Docker 内 Redis，需在宿主机执行 `sudo sysctl vm.overcommit_memory=1`
