@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -15,18 +16,41 @@ from app.services import embedding_service, retrieval_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ===== 每日对话次数限制（基于 IP，内存存储，每天自动重置） =====
+# ===== 每日对话次数限制（基于 IP，文件持久化，每天自动重置） =====
 DAILY_LIMIT = 5
 _limit_disabled = os.getenv("DAILY_LIMIT_DISABLED", "").lower() in ("1", "true", "yes")
-_usage: dict[str, dict] = {}  # { ip: {"date": "2026-07-04", "count": 3} }
+_usage_file = Path("./data/usage.json")
+
+
+def _load_usage() -> dict:
+    """从文件读取 usage 数据"""
+    if _usage_file.exists():
+        try:
+            return json.loads(_usage_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_usage(data: dict) -> None:
+    """持久化 usage 数据到文件"""
+    _usage_file.parent.mkdir(parents=True, exist_ok=True)
+    _usage_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 def _is_bypassed(ip: str) -> bool:
-    """内网 IP 或环境变量关闭限制时跳过"""
+    """内网 IP、Docker 内部 IP 或环境变量关闭限制时跳过"""
     if _limit_disabled:
         return True
-    # 内网 IP 段自动免限制（开发调试用）
-    return ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1"
+    # 内网 IP: 192.168.x.x, 10.x.x.x, 127.0.0.1
+    # Docker bridge: 172.16-31.x.x (容器间通信 IP)
+    if ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1":
+        return True
+    if ip.startswith("172."):
+        second_octet = ip.split(".")[1] if len(ip.split(".")) > 1 else "0"
+        if 16 <= int(second_octet) <= 31:
+            return True
+    return False
 
 
 def _get_client_ip(request: Request) -> str:
@@ -34,6 +58,9 @@ def _get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -42,10 +69,12 @@ def _check_daily_limit(ip: str) -> int:
     if _is_bypassed(ip):
         return DAILY_LIMIT  # 免限制
     today = date.today().isoformat()
-    record = _usage.get(ip)
+    usage = _load_usage()
+    record = usage.get(ip)
 
     if not record or record["date"] != today:
-        _usage[ip] = {"date": today, "count": 1}
+        usage[ip] = {"date": today, "count": 1}
+        _save_usage(usage)
         return DAILY_LIMIT - 1
 
     if record["count"] >= DAILY_LIMIT:
@@ -54,8 +83,9 @@ def _check_daily_limit(ip: str) -> int:
             detail=f"今日对话次数已用完 ({DAILY_LIMIT}/{DAILY_LIMIT})，请明天再来",
         )
 
-    record["count"] += 1
-    return DAILY_LIMIT - record["count"]
+    usage[ip] = {"date": record["date"], "count": record["count"] + 1}
+    _save_usage(usage)
+    return DAILY_LIMIT - record["count"] - 1
 
 
 @router.get("/models")
@@ -78,7 +108,8 @@ async def chat_count(request: Request):
     """查询当前 IP 今日剩余对话次数"""
     ip = _get_client_ip(request)
     today = date.today().isoformat()
-    record = _usage.get(ip)
+    usage = _load_usage()
+    record = usage.get(ip)
     used = record["count"] if (record and record["date"] == today) else 0
     return {
         "ip": ip,

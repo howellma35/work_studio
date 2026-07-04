@@ -7,11 +7,13 @@ AutoMind 车机智能助手 - FastAPI 服务入口
 - LangGraph Studio 调试支持
 - 健康检查 & 状态查询接口
 """
+import json
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,24 +25,54 @@ from app.graph.supervisor import get_graph
 from app.utils.observability import get_langfuse_handler, setup_observability
 
 
-# ===== 每日对话次数限制（基于 IP，内存存储，每天自动重置） =====
+# ===== 每日对话次数限制（基于 IP，文件持久化，每天自动重置） =====
 VEHICLE_DAILY_LIMIT = 5
 _limit_disabled = os.getenv("DAILY_LIMIT_DISABLED", "").lower() in ("1", "true", "yes")
-_vehicle_usage: dict[str, dict] = {}  # { ip: {"date": "2026-07-04", "count": 3} }
+_usage_file = Path("./data/usage.json")
+
+
+def _load_usage() -> dict:
+    """从文件读取 usage 数据"""
+    if _usage_file.exists():
+        try:
+            return json.loads(_usage_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_usage(data: dict) -> None:
+    """持久化 usage 数据到文件"""
+    _usage_file.parent.mkdir(parents=True, exist_ok=True)
+    _usage_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 def _get_client_ip(request: Request) -> str:
+    # X-Forwarded-For 最后一层 nginx 添加的真实客户端 IP 在最前面
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
+    # X-Real-IP 备选
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
     return request.client.host if request.client else "unknown"
 
 
 def _is_bypassed(ip: str) -> bool:
-    """内网 IP 或环境变量关闭限制时跳过"""
+    """内网 IP、Docker 内部 IP 或环境变量关闭限制时跳过"""
     if _limit_disabled:
         return True
-    return ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1"
+    # 内网 IP: 192.168.x.x, 10.x.x.x, 127.0.0.1
+    # Docker bridge: 172.16-31.x.x (容器间通信 IP)
+    if ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1":
+        return True
+    if ip.startswith("172."):
+        # Docker 默认分配 172.16.0.0/12 范围，全部视为内部
+        second_octet = ip.split(".")[1] if len(ip.split(".")) > 1 else "0"
+        if 16 <= int(second_octet) <= 31:
+            return True
+    return False
 
 
 # ===== 日志配置 =====
@@ -156,10 +188,12 @@ async def daily_limit_middleware(request: Request, call_next):
             return await call_next(request)
 
         today = date.today().isoformat()
-        record = _vehicle_usage.get(ip)
+        usage = _load_usage()
+        record = usage.get(ip)
 
         if not record or record["date"] != today:
-            _vehicle_usage[ip] = {"date": today, "count": 1}
+            usage[ip] = {"date": today, "count": 1}
+            _save_usage(usage)
         elif record["count"] >= VEHICLE_DAILY_LIMIT:
             logger.warning(f"每日限制达到: ip={ip}, count={record['count']}/{VEHICLE_DAILY_LIMIT}")
             return JSONResponse(
@@ -167,7 +201,8 @@ async def daily_limit_middleware(request: Request, call_next):
                 content={"detail": f"今日对话次数已用完 ({VEHICLE_DAILY_LIMIT}/{VEHICLE_DAILY_LIMIT})，请明天再来"},
             )
         else:
-            record["count"] += 1
+            usage[ip] = {"date": record["date"], "count": record["count"] + 1}
+            _save_usage(usage)
 
     return await call_next(request)
 
@@ -189,7 +224,8 @@ async def chat_count(request: Request):
     """查询当前 IP 今日剩余对话次数"""
     ip = _get_client_ip(request)
     today = date.today().isoformat()
-    record = _vehicle_usage.get(ip)
+    usage = _load_usage()
+    record = usage.get(ip)
     used = record["count"] if (record and record["date"] == today) else 0
     return {
         "ip": ip,

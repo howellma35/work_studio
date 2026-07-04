@@ -70,6 +70,7 @@ services:
       - .env
     volumes:
       - ai-logs:/app/logs
+      - ai-data:/app/data
     depends_on:
       - qdrant
 
@@ -297,6 +298,7 @@ services:
 volumes:
   # 主项目
   ai-logs:
+  ai-data:
   qdrant-data:
   # vehicle-agent
   vehicle-data:
