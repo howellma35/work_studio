@@ -14,7 +14,7 @@
 ## 部署架构
 
 ```
-用户请求 → Nginx (80/443)
+用户请求 → ECS Nginx (443 SSL终结) → frp 隧道 (6003) → 家里 Docker Nginx (80)
   ├── /                       → Web 前端 (React SPA)
   ├── /api/ai/*               → AI 后端 (FastAPI，大模型对话 + RAG)
   ├── /api/knowledge/*        → AI 后端 (FastAPI，知识库管理)
@@ -29,7 +29,7 @@
 
 | 服务 | 容器名 | 端口 | 技术栈 | 说明 |
 |------|--------|------|--------|------|
-| nginx | nginx | 80, 443 | Nginx Alpine | 反向代理 + SSL 终结 |
+| nginx | nginx | 80 | Nginx Alpine | HTTP 反向代理（SSL由ECS nginx处理） |
 | web | web | 80 (内部) | Nginx + React SPA | 主站前端 |
 | ai-server | ai-server | 8000 | Python FastAPI | AI 聊天 + RAG 知识库 |
 | vehicle-backend | vehicle-backend | 8001 | Python FastAPI + LangGraph | 车载助手后端 |
@@ -37,6 +37,7 @@
 | vehicle-frontend | vehicle-frontend | 80 (内部) | React + CopilotKit | 车载助手前端 |
 | qdrant | qdrant | 6333 | Qdrant | 向量数据库 |
 | chromadb | chromadb | 8002 | ChromaDB | 长期记忆向量库 |
+| redis | redis | 6379 | Redis 7 Alpine | 共享缓存/队列 |
 | langfuse | langfuse-app | 3000 | Langfuse V3 | LLM 可观测性（可选） |
 
 ---
@@ -145,29 +146,114 @@ if [ -z "$CURRENT_SWAP" ] || [ "$CURRENT_SWAP" -lt 1024 ]; then
 fi
 ```
 
-### 8. 申请 SSL 证书
+### 8. 申请 SSL 证书（ECS 上操作）
+
+> **架构说明**：SSL 终结在 ECS 上完成。ECS nginx 监听 443（HTTPS），解密后转发 HTTP 明文到 frp 隧道（127.0.0.1:6003），再通过 frp 到达家里 Docker nginx。
+> 这样证书申请、续期都在 ECS 上，不需要走 frp 随道验证，更简单可靠。
+
+#### 8.1 安装 certbot
+
+**方式 1：snap 安装（推荐，Ubuntu 24.04+）**
+
+```bash
+sudo apt install -y snapd
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+```
+
+**方式 2：apt 安装（旧版本 Ubuntu）**
 
 ```bash
 sudo apt install -y certbot
+```
+
+#### 8.2 申请证书
+
+```bash
+# 在 ECS 上执行（certbot standalone 直接在 ECS 监听 80）
+# 如果 frps 正在监听 80 端口，需要先停止 frps 释放 80
+sudo systemctl stop frps
+
+# 申请证书
 sudo certbot certonly --standalone -d mahongwei.com.cn
+
 # 证书存放在: /etc/letsencrypt/live/mahongwei.com.cn/
+ls -la /etc/letsencrypt/live/mahongwei.com.cn/
+# 应看到 fullchain.pem 和 privkey.pem
 
-# 设置自动续期（每 90 天）
-echo "0 3 * * * certbot renew --quiet --deploy-hook 'docker compose -f /path/to/deploy/docker-compose.yml restart nginx'" | sudo tee -a /var/spool/cron/crontabs/root
+# 重新启动 frps
+sudo systemctl start frps
+```
 
+#### 8.3 安装 ECS nginx
 
+```bash
+# 在 ECS 上安装 nginx
+sudo apt install -y nginx
 
-2. 安装 snap（如果没有的话）
-sudo apt install -y snapd
+# 复制配置文件（从项目 deploy/ecs-nginx/mahongwei.conf）
+sudo cp deploy/ecs-nginx/mahongwei.conf /etc/nginx/conf.d/mahongwei.conf
 
-# 3. 用 snap 安装 certbot（最新版，兼容 Python 3.14）
-sudo snap install --classic certbot
+# 删除默认站点（避免冲突）
+sudo rm -f /etc/nginx/sites-enabled/default
 
-# 4. 创建软链接
-sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+# 测试配置
+sudo nginx -t
+# 应看到: test is successful
 
-# 5. 重新申请证书
-sudo certbot certonly --standalone -d mahongwei.com.cn
+# 启动 nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+sudo systemctl status nginx
+```
+
+#### 8.4 验证 SSL 是否正常
+
+```bash
+# ① 检查证书文件是否存在
+ls -la /etc/letsencrypt/live/mahongwei.com.cn/
+# 应看到: fullchain.pem, privkey.pem
+
+# ② 检查 ECS nginx 是否监听 443
+sudo ss -tlnp | grep -E ":80|:443"
+# 应看到 nginx 监听 80 和 443
+
+# ③ 检查 ECS nginx 配置语法
+sudo nginx -t
+
+# ④ 测试 HTTPS 连接（在 ECS 本机测试）
+curl -v https://mahongwei.com.cn
+# 应看到 SSL handshake 成功 + 返回 HTML 内容
+# 如果返回 Empty reply，说明 frp 随道还没打通
+
+# ⑤ 测试 SSL 证书信息
+openssl s_client -connect mahongwei.com.cn:443 -servername mahongwei.com.cn </dev/null 2>/dev/null | openssl x509 -noout -subject -dates
+# 应看到: subject=CN = mahongwei.com.cn
+#          notBefore=... notAfter=...（有效期 90 天）
+
+# ⑥ 从外网测试 HTTPS
+# 在任意外网机器上
+curl -I https://mahongwei.com.cn
+# 应看到: HTTP/2 200 或 301
+```
+
+#### 8.5 SSL 常见问题排查
+
+| 问题 | 症状 | 排查命令 | 解决方法 |
+|------|------|----------|----------|
+| 证书未申请 | nginx 启动失败 | `ls /etc/letsencrypt/live/mahongwei.com.cn/` | 先执行 8.2 申请证书 |
+| frps 占了 80 端口 | certbot standalone 失败 | `sudo ss -tlnp | grep :80` | 先停 frps 再申请证书 |
+| nginx 配置语法错误 | `nginx -t` 报错 | `sudo nginx -t` | 检查配置文件语法 |
+| HTTPS 返回 Empty reply | `curl https://域名` 无响应 | 检查 frp 穿透是否生效 | 确保 frpc 连接成功 + nginx-http 穿透规则注册 |
+| SSL handshake 失败 | `curl: (35) SSL connect error` | `openssl s_client -connect 域名:443` | 检查证书路径是否正确 |
+| 证书过期 | 浏览器提示不安全 | `openssl x509 -noout -dates` | 执行 `sudo certbot renew` |
+
+#### 8.6 设置自动续期
+
+```bash
+# 在 ECS 上设置 crontab
+sudo certbot renew --dry-run   # 先测试续期是否正常
+echo "0 3 */7 * * certbot renew --quiet --deploy-hook 'systemctl reload nginx'" | sudo tee -a /var/spool/cron/crontabs/root
 ```
 
 ---
@@ -253,15 +339,19 @@ localhost:8001             公网 IP:6001               http://公网IP:6001
 │                                                                 │
 │  手机/电脑用户                                                   │
 │       │                                                         │
-│       │  访问 http://106.14.24.38:6001                          │
+│       │  访问 https://mahongwei.com.cn                          │
 │       ▼                                                         │
 │  ┌────────────────────────────────────────────┐                 │
-│  │  阿里云 ECS (106.14.24.38)                  │                │
+│  │  阏里云 ECS (106.14.24.38)                  │                │
 │  │  ─────────────────────────                  │                │
 │  │  • 公网 IP，24 小时在线                      │                │
-│  │  • 运行 frps (服务端) 监听 7000 端口         │                │
-│  │  • 转发请求到内网机器                        │                │
-│  │  • 开放端口：7000, 6000, 6001, 6002, 7500   │                │
+│  │  • nginx: SSL 终结 (80/443)                 │                │
+│  │  • frps: 内网穿透服务端 (7000)               │                │
+│  │  • 开放端口：80, 443, 7000, 6000-6002, 7500 │                │
+│  │                                             │                │
+│  │  HTTPS 请求处理流程：                        │                │
+│  │  443 → nginx SSL终结 → 127.0.0.1:6003 → frps │                │
+│  │  80 → nginx 301重定向到HTTPS                │                │
 │  └─────────────────┬──────────────────────────┘                 │
 │                    │                                            │
 │                    │  ← frp 加密隧道 (TCP 长连接) →              │
@@ -275,38 +365,50 @@ localhost:8001             公网 IP:6001               http://公网IP:6001
           │  内网机器              │
           │  192.168.31.101       │
           │  ──────────────       │
-          │  • 运行 frpc (客户端)  │
-          │  • 主动连接 frps      │
-          │  • 转发本地服务        │
+          │  • frpc (客户端)      │
+          │  • Docker 全部服务     │
           │                      │
-          │  本地服务：            │
-          │  • localhost:5173     │  Vite 前端
-          │  • localhost:8001     │  车载助手后端
-          │  • localhost:8000     │  AI 后端
-          │  • localhost:4000     │  CopilotKit Runtime
+          │  Docker nginx:80     │  HTTP 反向代理（不做SSL）
+          │  ai-server:8000      │  AI 后端
+          │  vehicle-backend:8001│  车载助手后端
+          │  vehicle-runtime:4000│  CopilotKit Runtime
           └──────────────────────┘
 ```
 
 ### 工作原理（一步步解释）
 
 ```
-第 1 步：frpc 启动后，主动连接 frps 的 7000 端口，建立一条"隧道"
-         192.168.31.101 ──────────→ 106.14.24.38:7000
+HTTPS 请求的完整流程：
 
-第 2 步：frpc 告诉 frps："我要把本地 8001 端口映射到你的 6001 端口"
-         frpc 发送配置给 frps
+第 1 步：用户访问 https://mahongwei.com.cn
+         请求到达 ECS 的 nginx (443端口)
 
-第 3 步：外网用户访问 http://106.14.24.38:6001
-         请求到达阿里云服务器
+第 2 步：ECS nginx 做 SSL 终结（解密 HTTPS → HTTP）
+         nginx 将请求转发到 127.0.0.1:6003
 
-第 4 步：frps 收到请求，通过"隧道"转发给 frpc
-         106.14.24.38:6001 ──────隧道──────→ 192.168.31.101
+第 3 步：frps 在 ECS 上监听 6003 端口
+         收到 HTTP 明文请求
 
-第 5 步：frpc 收到请求，转发给本地 localhost:8001
-         192.168.31.101 ──────→ localhost:8001
+第 4 步：frps 通过 frp 隧道转发给 frpc
+         ECS:6003 ──────隧道──────→ 192.168.31.101:80
 
-第 6 步：本地服务处理请求，返回响应
-         响应沿着原路返回：本地 → frpc → 隧道 → frps → 用户
+第 5 步：frpc 转发给本地 Docker nginx:80
+         192.168.31.101 ──────→ Docker nginx:80
+
+第 6 步：Docker nginx 反向代理到各后端服务
+         ai-server / vehicle-backend / web 等
+
+第 7 步：响应沿原路返回
+         后端 → Docker nginx → frpc → 隧道 → frps → ECS nginx(加密) → 用户
+```
+
+HTTP 请求的流程：
+
+```
+用户访问 http://mahongwei.com.cn
+→ ECS nginx (80) 返回 301 重定向到 HTTPS
+→ 用户浏览器自动跳转到 https://mahongwei.com.cn
+→ 走上面的 HTTPS 流程
 ```
 
 ---
@@ -418,10 +520,15 @@ sudo systemctl status frps
 # 放行 frp 通信端口
 sudo ufw allow 7000/tcp    # frpc 连接 frps 用的
 
-# 放行穿透端口（根据 frpc 配置调整）
-sudo ufw allow 6000/tcp    # AI 后端
-sudo ufw allow 6001/tcp    # 车载助手后端
-sudo ufw allow 6002/tcp    # CopilotKit Runtime
+# 放行 ECS nginx（SSL 终结 + HTTP 重定向）
+sudo ufw allow 80/tcp      # HTTP（ECS nginx 监听）
+sudo ufw allow 443/tcp     # HTTPS（ECS nginx SSL 终结）
+
+# 放行 frpc 穿透的端口（frpc 配了 remotePort，ECS 这里就要放行）
+# 6003 不需要放行！ECS nginx proxy_pass 到 127.0.0.1:6003 是本机内部通信，UFW 不管
+sudo ufw allow 6000/tcp    # AI 后端（开发调试）
+sudo ufw allow 6001/tcp    # 车载助手后端（开发调试）
+sudo ufw allow 6002/tcp    # CopilotKit Runtime（开发调试）
 
 # 放行 Dashboard（可选）
 sudo ufw allow 7500/tcp
@@ -439,9 +546,12 @@ sudo ufw status verbose
 | 授权策略 | 协议类型 | 端口范围 | 授权对象 | 说明 |
 |---------|---------|---------|---------|------|
 | 允许 | TCP | 7000/7000 | 0.0.0.0/0 | frp 通信端口 |
-| 允许 | TCP | 6000/6000 | 0.0.0.0/0 | AI 后端穿透 |
-| 允许 | TCP | 6001/6001 | 0.0.0.0/0 | 车载助手后端穿透 |
-| 允许 | TCP | 6002/6002 | 0.0.0.0/0 | CopilotKit Runtime 穿透 |
+| 允许 | TCP | 80/80 | 0.0.0.0/0 | HTTP（ECS nginx 监听） |
+| 允许 | TCP | 443/443 | 0.0.0.0/0 | HTTPS（ECS nginx SSL 终结） |
+| 允许 | TCP | 6003/6003 | 不需要 | ECS nginx 转发到 127.0.0.1:6003 是本机内部通信，安全组不管 |
+| 允许 | TCP | 6000/6000 | 0.0.0.0/0 | AI 后端穿透（开发调试） |
+| 允许 | TCP | 6001/6001 | 0.0.0.0/0 | 车载助手后端穿透（开发调试） |
+| 允许 | TCP | 6002/6002 | 0.0.0.0/0 | CopilotKit Runtime 穿透（开发调试） |
 | 允许 | TCP | 7500/7500 | 你的 IP/32 | frp Dashboard（建议限制 IP） |
 
 #### 1.6 验证服务端是否正常工作
@@ -453,11 +563,19 @@ sudo journalctl -u frps -f --no-pager
 # 或者查看日志文件
 tail -f /var/log/frps.log
 
-# 检查端口是否在监听
-sudo ss -tlnp | grep -E "7000|7500|6000|6001|6002"
-# 应看到:
-# LISTEN  0  128  *:7000  *  users:(("frps",pid=xxx))
-# LISTEN  0  128  *:7500  *  users:(("frps",pid=xxx))
+# 检查端口是否在监听（80/443 需要等 frpc 注册穿透规则后才会出现）
+sudo ss -tlnp | grep frps
+# frpc 连接成功后应看到:
+# LISTEN  *:6003  (nginx-http 穿透规则，ECS nginx 占了80所以用6003)
+# LISTEN  *:443   (ECS nginx SSL终结，不是frps监听的)
+# LISTEN  *:7000  (frps 通信端口)
+# LISTEN  *:7500  (Dashboard)
+# LISTEN  *:6000  (AI 后端穿透)
+# LISTEN  *:6001  (车载助手后端穿透)
+# LISTEN  *:6002  (CopilotKit Runtime 穿透)
+#
+# 如果只看到 7000/7500 没有 80/443/6000/6001/6002，说明 frpc 没连接成功
+# 请检查 frpc 日志：sudo journalctl -u frpc -n 30
 ```
 
 ---
@@ -515,16 +633,28 @@ auth.method = "token"
 auth.token = "a3f8b2c1d4e5f6a7b8c9d0e1f2a3b4c5"   # ← 和 frps 一样
 
 # 日志配置
+# Linux 路径
 log.to = "/var/log/frpc.log"
 log.level = "info"
 log.maxDays = 7
+# Windows 路径请改为: log.to = "C:\frp\frpc.log"
 
 # ================================================================
 # 穿透规则配置
 # 每增加一个 [[proxies]] 就是增加一条穿透规则
 # ================================================================
 
-# ----- 规则 1：穿透 Vite 前端开发服务器 -----
+# ----- 规则 1：穿透家里 Nginx HTTP (80) -----
+# ECS nginx 占了 80 端口做 HTTPS 重定向，所以 frps 用 6003 端口
+# 请求流程：ECS nginx:443(SSL终结) → proxy_pass 127.0.0.1:6003 → frps → frp隧道 → 家里:80
+[[proxies]]
+name = "nginx-http"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 80
+remotePort = 6003                   # 不能用80，ECS nginx 已经占了80
+
+# ----- 规则 2：穿透 Vite 前端开发服务器 -----
 # 用 HTTP 类型，支持域名访问（需要 DNS 解析）
 [[proxies]]
 name = "web-dev"
@@ -533,8 +663,7 @@ localIP = "127.0.0.1"
 localPort = 5173                    # 本地 Vite 端口
 customDomains = ["dev.mahongwei.com.cn"]   # 访问域名
 
-# ----- 规则 2：穿透车载助手后端 -----
-# 用 TCP 类型，直接映射端口
+# ----- 规则 4：穿透车载助手后端 -----
 [[proxies]]
 name = "vehicle-backend"
 type = "tcp"
@@ -542,7 +671,7 @@ localIP = "127.0.0.1"
 localPort = 8001                    # 本地后端端口
 remotePort = 6001                   # 公网访问端口
 
-# ----- 规则 3：穿透 AI 后端 -----
+# ----- 规则 5：穿透 AI 后端 -----
 [[proxies]]
 name = "ai-server"
 type = "tcp"
@@ -550,7 +679,7 @@ localIP = "127.0.0.1"
 localPort = 8000
 remotePort = 6000
 
-# ----- 规则 4：穿透 CopilotKit Runtime -----
+# ----- 规则 6：穿透 CopilotKit Runtime -----
 [[proxies]]
 name = "vehicle-runtime"
 type = "tcp"
@@ -588,8 +717,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/frpc -c /etc/frp/frpc.toml
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -635,8 +764,13 @@ sudo journalctl -u frpc -f --no-pager
 # Windows（命令行窗口会直接输出）
 # 看到类似以下内容表示成功：
 # [I] login to server success
+# [I] [nginx-http] start proxy success
 # [I] [vehicle-backend] start proxy success
 # [I] [ai-server] start proxy success
+# [I] [vehicle-runtime] start proxy success
+#
+# 如果看到 "login to the server failed: token in login doesn't match"
+# 说明 frpc 和 frps 的 auth.token 不一致，请检查两边配置
 ```
 
 **在阿里云 ECS 上查看 Dashboard：**
@@ -654,9 +788,12 @@ sudo journalctl -u frpc -f --no-pager
 
 | 测试项 | 命令/操作 | 预期结果 |
 |-------|--------|---------|
-| frps 运行状态 | `systemctl status frps` | active (running) |
-| frpc 连接状态 | frpc 日志看到 "login success" | 连接成功 |
+| frps 运行状态 | `sudo systemctl status frps` | active (running) |
+| frpc 连接状态 | `sudo journalctl -u frpc -n 20` 看到 "login success" | 连接成功 |
+| ECS 端口监听 | `sudo ss -tlnp | grep -E "frps|nginx"` | 6003/6000/6001/6002/7000/7500(frps) + 80/443(nginx) |
 | Dashboard 可访问 | 浏览器打开 `http://106.14.24.38:7500` | 看到管理面板 |
+| HTTP 域名访问 | `curl http://mahongwei.com.cn` | 返回前端页面 |
+| HTTPS 域名访问 | `curl https://mahongwei.com.cn` | 返回前端页面（需 SSL 证书） |
 | AI 后端穿透 | `curl http://106.14.24.38:6000/api/health` | 返回健康检查 |
 | 车载助手穿透 | `curl http://106.14.24.38:6001/api/vehicle/health` | 返回健康检查 |
 | 前端域名访问 | 浏览器打开 `http://dev.mahongwei.com.cn` | 看到前端页面 |
@@ -759,7 +896,7 @@ sudo journalctl -u frps -n 100
 sudo systemctl stop frps
 
 # 查看端口监听情况
-sudo ss -tlnp | grep -E "7000|6000|6001|6002"
+sudo ss -tlnp | grep frps
 
 
 # ==================== 内网机器 (frpc) ====================
@@ -838,35 +975,114 @@ sudo systemctl restart frpc
 
 ## 第四部分：常用运维命令
 
+> 以下命令均在 `deploy/` 目录下执行
+
+### 构建 & 启动
+
+```bash
+# 构建并启动全部服务
+docker compose up -d --build
+
+# 只重新构建某个服务（改了代码后用）
+docker compose up -d --build web              # 主站前端
+docker compose up -d --build ai-server        # AI 后端
+docker compose up -d --build vehicle-backend  # 车载助手后端
+docker compose up -d --build vehicle-frontend # 车载助手前端
+docker compose up -d --build vehicle-runtime  # CopilotKit Runtime
+docker compose up -d --build nginx            # Nginx 反向代理
+
+# 强制重新构建（忽略缓存，改了 package.json / requirements.txt 后用）
+docker compose build --no-cache web
+docker compose up -d web
 ```
-# 查看所有容器状态
-docker compose ps
 
-# 查看单个服务日志
-docker compose logs -f ai-server
-docker compose logs -f vehicle-backend
-docker compose logs -f qdrant
+### 重启（不重新构建，只重启容器）
 
-# 重启单个服务
-docker compose restart ai-server
+```bash
+docker compose restart web              # 主站前端
+docker compose restart ai-server        # AI 后端
+docker compose restart vehicle-backend  # 车载助手后端
+docker compose restart vehicle-frontend # 车载助手前端
+docker compose restart vehicle-runtime  # CopilotKit Runtime
+docker compose restart nginx            # Nginx
+docker compose restart                  # 全部重启
+```
 
-# 重新构建某个服务（代码更新后）
-docker compose up -d --build ai-server
+### 停止
 
-# 进入容器调试
-docker compose exec ai-server bash
+```bash
+docker compose down         # 停止全部服务（不删除数据）
+docker compose down -v      # 停止 + 删除数据卷（慎用，清空知识库数据）
+```
 
-# 停止所有服务
-docker compose down
+### 查看日志
 
-# 停止并清除数据卷（慎用，会删除所有知识库数据）
-docker compose down -v
+```bash
+docker compose logs -f                      # 全部服务实时日志
+docker compose logs -f web                  # 主站前端
+docker compose logs -f ai-server            # AI 后端
+docker compose logs -f vehicle-backend      # 车载助手后端
+docker compose logs -f vehicle-frontend     # 车载助手前端
+docker compose logs -f vehicle-runtime      # CopilotKit Runtime
+docker compose logs -f nginx                # Nginx
+docker compose logs --tail 100 ai-server    # 最近 100 行日志
+```
 
-# 清理构建缓存
-docker compose build --no-cache
+### 调试 & 状态
 
-# 启动 Langfuse 可观测性（可选，需要 4GB+ 内存）
-docker compose --profile langfuse up -d --build
+```bash
+docker compose ps                           # 查看所有容器状态
+docker compose exec ai-server bash          # 进入 AI 后端容器
+docker compose exec vehicle-backend bash    # 进入车载助手容器
+docker compose exec nginx sh                # 进入 Nginx 容器
+docker compose exec redis sh                # 进入 Redis 容器
+```
+
+### Redis 管理（共享基础设施）
+
+Redis 已配置内存上限（默认 256MB），超限时自动淘汰最久未使用的数据（LRU）。
+
+```bash
+# 进入 Redis CLI
+docker compose exec redis redis-cli -a $REDIS_PASSWORD
+
+# 查看内存使用情况
+redis> info memory
+# used_memory_human: 当前使用量（如 50MB）
+# used_memory_peak_human: 历史最高值
+# maxmemory_human: 内存上限（如 256MB）
+# maxmemory_policy: 淘汰策略（allkeys-lru）
+
+# 查看 Key 数量
+redis> dbsize
+
+# 查看所有 Key（慎用，生产环境可能很多）
+redis> keys *
+
+# 退出
+redis> quit
+```
+
+**多服务共用 Redis（用不同数据库编号隔离）：**
+
+| 数据库 | 服务 | 连接方式 |
+|--------|------|----------|
+| db 0 | Langfuse | `SELECT 0` |
+| db 1 | RAGFlow（未来） | `SELECT 1` |
+| db 2 | 其他服务 | `SELECT 2` |
+
+**检查 Redis 是否被 OOM Killer 杀死：**
+
+```bash
+# 查看系统日志，看是否有 OOM（Out Of Memory）记录
+sudo dmesg | grep -i "oom\|killed\|redis" | tail -10
+```
+
+### Langfuse 可观测性（可选，需 4GB+ 内存）
+
+```bash
+docker compose --profile langfuse up -d --build   # 启动全部服务 + Langfuse
+docker compose --profile langfuse down             # 停止包括 Langfuse
 ```
 
 ---
@@ -882,17 +1098,22 @@ docker compose --profile langfuse up -d --build
 | vehicle-logs | /app/logs | 车载助手日志 |
 | langfuse-db-data | /var/lib/postgresql/data | Langfuse PostgreSQL |
 | langfuse-clickhouse-data | /var/lib/clickhouse | Langfuse ClickHouse |
-| langfuse-redis-data | /data | Langfuse Redis |
+| redis-data | /data | Redis 共享数据（缓存/队列） |
 | langfuse-minio-data | /data | Langfuse MinIO |
 
 ---
 
 ## 注意事项
 
-1. **SSL 证书更新**：Let's Encrypt 证书每 90 天需更新，更新后 `docker compose restart nginx`
-2. **日志查看**：容器内日志文件位于 `/app/logs/` 目录
-3. **端口冲突**：确保宿主机 80/443/6333/8000/8001/3000/4000 端口未被占用
-4. **环境变量**：`.env` 文件不要提交到 Git（已在 .gitignore 中排除），所有密钥、密码必须在 `.env` 中配置
-5. **知识库数据**：Qdrant 数据持久化在 `qdrant-data` 卷中，删除卷将丢失所有知识库数据
-6. **内网穿透安全**：frp token 务必设置强密码，不要暴露到公网 7500 端口（Dashboard）
-7. **Redis 配置**：如果使用 Docker 内 Redis，需在宿主机执行 `sudo sysctl vm.overcommit_memory=1`
+1. **SSL 证书**：Let's Encrypt 证书每 90 天需更新，ECS 上已配置 crontab 自动续期（`sudo certbot renew` + `systemctl reload nginx`）。证书存放在 ECS `/etc/letsencrypt/live/mahongwei.com.cn/`
+2. **SSL 终结架构**：HTTPS 在 ECS nginx 上终结，解密后通过 frp 随道转发 HTTP 明文到家里 Docker nginx。家里 nginx 只配 HTTP（80端口），不需要 SSL 证书
+3. **日志查看**：容器内日志文件位于 `/app/logs/` 目录
+4. **端口冲突**：家里宿主机只需确保 80/6333/8000/8001/8002/4000 端口未被占用（443 不再需要）；ECS 确保 80/443/6003/7000/7500 未被占用（ECS nginx 占80/443，frps 占6003/7000/6000-6002/7500）
+5. **环境变量**：`.env` 文件不要提交到 Git（已在 .gitignore 中排除），所有密钥、密码必须在 `.env` 中配置
+6. **知识库数据**：Qdrant 数据持久化在 `qdrant-data` 卷中，删除卷将丢失所有知识库数据
+7. **内网穿透安全**：frp token 务必设置强密码，不要暴露到公网 7500 端口（Dashboard）
+8. **Redis 配置**：Redis 是共享基础设施，需在宿主机执行 `sudo sysctl vm.overcommit_memory=1`
+9. **多服务共用 Redis**：各服务使用不同的数据库编号（`SELECT 0`、`SELECT 1`）隔离数据，避免 key 冲突
+10. **Redis 内存上限**：默认 256MB（`REDIS_MAXMEMORY`），超限自动淘汰旧数据（LRU），3.4GB 服务器建议不超过 512MB
+11. **扩展 RAGFlow**：未来如需添加 RAGFlow，它也会共用同一个 Redis（配置 `REDIS_URL=redis://redis:6379/1` 用 db=1 隔离）
+12. **ECS nginx 与 frps 端口不冲突**：frpc 穿透规则的 remotePort=6003（不是80），ECS nginx 占 80/443，frps 监听 6003/7000/6000/6001/6002/7500，互不冲突。申请 SSL 证书时需临时停 frps 释放 80 端口给 certbot

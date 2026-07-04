@@ -21,8 +21,6 @@ interface KbDetail {
   created_at: string;
 }
 
-const SUPPORTED_TYPES = '.pdf,.docx,.txt,.md,.csv,.html,.htm';
-
 export default function KnowledgeDetail() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<KbDetail | null>(null);
