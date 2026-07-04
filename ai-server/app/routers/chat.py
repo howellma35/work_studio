@@ -3,15 +3,59 @@ AI 聊天路由 — 支持 RAG 知识库检索增强
 """
 import json
 import logging
+import os
+from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.services.llm_service import chat_completion
 from app.services import embedding_service, retrieval_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ===== 每日对话次数限制（基于 IP，内存存储，每天自动重置） =====
+DAILY_LIMIT = 5
+_limit_disabled = os.getenv("DAILY_LIMIT_DISABLED", "").lower() in ("1", "true", "yes")
+_usage: dict[str, dict] = {}  # { ip: {"date": "2026-07-04", "count": 3} }
+
+
+def _is_bypassed(ip: str) -> bool:
+    """内网 IP 或环境变量关闭限制时跳过"""
+    if _limit_disabled:
+        return True
+    # 内网 IP 段自动免限制（开发调试用）
+    return ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1"
+
+
+def _get_client_ip(request: Request) -> str:
+    # 通过 nginx 代理时从 X-Forwarded-For 获取真实 IP
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_daily_limit(ip: str) -> int:
+    """检查并增加 IP 的每日对话计数，返回剩余次数。超出则 raise HTTPException"""
+    if _is_bypassed(ip):
+        return DAILY_LIMIT  # 免限制
+    today = date.today().isoformat()
+    record = _usage.get(ip)
+
+    if not record or record["date"] != today:
+        _usage[ip] = {"date": today, "count": 1}
+        return DAILY_LIMIT - 1
+
+    if record["count"] >= DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"今日对话次数已用完 ({DAILY_LIMIT}/{DAILY_LIMIT})，请明天再来",
+        )
+
+    record["count"] += 1
+    return DAILY_LIMIT - record["count"]
 
 
 @router.get("/models")
@@ -29,8 +73,25 @@ async def get_models():
     }
 
 
+@router.get("/chat-count")
+async def chat_count(request: Request):
+    """查询当前 IP 今日剩余对话次数"""
+    ip = _get_client_ip(request)
+    today = date.today().isoformat()
+    record = _usage.get(ip)
+    used = record["count"] if (record and record["date"] == today) else 0
+    return {
+        "ip": ip,
+        "date": today,
+        "used": used,
+        "limit": DAILY_LIMIT,
+        "remaining": max(0, DAILY_LIMIT - used),
+    }
+
+
 @router.post("/chat")
 async def chat(
+    request: Request,
     message: str = Form(...),
     model: str = Form(default="gpt-4o-mini"),
     history: str = Form(default="[]"),
@@ -46,7 +107,10 @@ async def chat(
     - kb_id: 可选的知识库 ID，指定后进行 RAG 检索增强
     - knowledge_file: 可选的临时知识文件（向后兼容）
     """
-    logger.info(f"Chat request: model={model}, kb_id={kb_id or 'none'}, message_length={len(message)}")
+    # 每日限制检查
+    client_ip = _get_client_ip(request)
+    remaining = _check_daily_limit(client_ip)
+    logger.info(f"Chat request: ip={client_ip}, model={model}, remaining={remaining}/{DAILY_LIMIT}")
 
     try:
         messages: list[dict[str, Any]] = json.loads(history)

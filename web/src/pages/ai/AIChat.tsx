@@ -26,6 +26,7 @@ interface Conversation {
 }
 
 const STORAGE_KEY = 'ai_conversations';
+const DAILY_LIMIT = 5;
 
 function loadConversations(): Conversation[] {
   try {
@@ -35,6 +36,21 @@ function loadConversations(): Conversation[] {
 
 function saveConversations(convs: Conversation[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(convs));
+}
+
+/** 每日对话次数管理（基于 localStorage，每天重置） */
+function getTodayKey() {
+  return `ai_chat_count_${new Date().toISOString().slice(0, 10)}`;
+}
+
+function getTodayCount(): number {
+  return parseInt(localStorage.getItem(getTodayKey()) || '0', 10);
+}
+
+function incrementTodayCount(): number {
+  const count = getTodayCount() + 1;
+  localStorage.setItem(getTodayKey(), String(count));
+  return count;
 }
 
 export default function AIChat() {
@@ -50,6 +66,22 @@ export default function AIChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [backendCount, setBackendCount] = useState(getTodayCount);
+
+  // 从后端获取真实计数（防止 localStorage 被清绕过）
+  useEffect(() => {
+    fetch('/api/ai/chat-count')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.used === 'number') {
+          setBackendCount(data.used);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 实际计数取后端值（更可靠）
+  const actualCount = Math.max(getTodayCount(), backendCount);
 
   const activeConversation = conversations.find((c) => c.id === activeId) || null;
 
@@ -131,6 +163,17 @@ export default function AIChat() {
       setActiveId(convId);
     }
 
+    // 检查每日限制
+    if (actualCount >= DAILY_LIMIT) {
+      const errMsg: Message = {
+        role: 'assistant',
+        content: `**今日对话次数已用完** (${DAILY_LIMIT}/${DAILY_LIMIT})\n\n每位用户每天最多 ${DAILY_LIMIT} 次对话，请明天再来吧 🙏`,
+        timestamp: Date.now(),
+      };
+      updateMessages(convId!, (msgs) => [...msgs, errMsg]);
+      return;
+    }
+
     setConversations((prev) =>
       prev.map((c) =>
         c.id === convId && c.messages.length === 0
@@ -166,7 +209,15 @@ export default function AIChat() {
       }
 
       const data = await resp.json() as { reply: string };
-      const assistantMsg: Message = { role: 'assistant', content: data.reply, timestamp: Date.now() };
+      incrementTodayCount(); // 成功回复后才计数
+      const remaining = DAILY_LIMIT - getTodayCount();
+      let reply = data.reply;
+      if (remaining > 0 && remaining <= 2) {
+        reply += `\n\n---\n💡 今日剩余对话次数：${remaining}/${DAILY_LIMIT}`;
+      } else if (remaining === 0) {
+        reply += `\n\n---\n📝 今日对话次数已用完 (${DAILY_LIMIT}/${DAILY_LIMIT})，明天再来吧！`;
+      }
+      const assistantMsg: Message = { role: 'assistant', content: reply, timestamp: Date.now() };
       updateMessages(convId, (msgs) => [...msgs, assistantMsg]);
     } catch (err) {
       const errMsg: Message = {
@@ -232,6 +283,13 @@ export default function AIChat() {
               <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
             ))}
           </select>
+          {/* 每日限制提示 */}
+          <div className="flex items-center gap-1.5 text-xs px-1 py-1.5 mb-2 rounded-lg bg-[var(--color-bg-soft)]">
+            <span className="text-[var(--color-text-secondary)]">💬 今日剩余：</span>
+            <span className={`font-semibold ${actualCount >= DAILY_LIMIT ? 'text-red-500' : 'text-[var(--color-accent)]'}`}>
+              {DAILY_LIMIT - actualCount}/{DAILY_LIMIT}
+            </span>
+          </div>
           {knowledgeBases.length > 0 && (
             <select
               value={selectedKbId}

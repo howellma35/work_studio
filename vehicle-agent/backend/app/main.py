@@ -8,16 +8,39 @@ AutoMind 车机智能助手 - FastAPI 服务入口
 - 健康检查 & 状态查询接口
 """
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import date
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.config import settings
 from app.graph.supervisor import get_graph
 from app.utils.observability import get_langfuse_handler, setup_observability
+
+
+# ===== 每日对话次数限制（基于 IP，内存存储，每天自动重置） =====
+VEHICLE_DAILY_LIMIT = 5
+_limit_disabled = os.getenv("DAILY_LIMIT_DISABLED", "").lower() in ("1", "true", "yes")
+_vehicle_usage: dict[str, dict] = {}  # { ip: {"date": "2026-07-04", "count": 3} }
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _is_bypassed(ip: str) -> bool:
+    """内网 IP 或环境变量关闭限制时跳过"""
+    if _limit_disabled:
+        return True
+    return ip.startswith("192.168.") or ip.startswith("10.") or ip == "127.0.0.1"
 
 
 # ===== 日志配置 =====
@@ -122,6 +145,33 @@ app.add_middleware(
 )
 
 
+# ===== 每日对话限制中间件 =====
+@app.middleware("http")
+async def daily_limit_middleware(request: Request, call_next):
+    """对 POST /copilotkit 请求进行每日次数限制"""
+    if request.method == "POST" and request.url.path == "/copilotkit":
+        ip = _get_client_ip(request)
+
+        if _is_bypassed(ip):
+            return await call_next(request)
+
+        today = date.today().isoformat()
+        record = _vehicle_usage.get(ip)
+
+        if not record or record["date"] != today:
+            _vehicle_usage[ip] = {"date": today, "count": 1}
+        elif record["count"] >= VEHICLE_DAILY_LIMIT:
+            logger.warning(f"每日限制达到: ip={ip}, count={record['count']}/{VEHICLE_DAILY_LIMIT}")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"今日对话次数已用完 ({VEHICLE_DAILY_LIMIT}/{VEHICLE_DAILY_LIMIT})，请明天再来"},
+            )
+        else:
+            record["count"] += 1
+
+    return await call_next(request)
+
+
 # ===== REST API 端点 =====
 @app.get("/api/vehicle/health")
 async def health():
@@ -131,6 +181,22 @@ async def health():
         "service": "automind",
         "model": settings.LLM_MODEL,
         "langfuse_enabled": settings.langfuse_enabled,
+    }
+
+
+@app.get("/api/vehicle/chat-count")
+async def chat_count(request: Request):
+    """查询当前 IP 今日剩余对话次数"""
+    ip = _get_client_ip(request)
+    today = date.today().isoformat()
+    record = _vehicle_usage.get(ip)
+    used = record["count"] if (record and record["date"] == today) else 0
+    return {
+        "ip": ip,
+        "date": today,
+        "used": used,
+        "limit": VEHICLE_DAILY_LIMIT,
+        "remaining": max(0, VEHICLE_DAILY_LIMIT - used),
     }
 
 

@@ -1078,11 +1078,13 @@ redis> quit
 sudo dmesg | grep -i "oom\|killed\|redis" | tail -10
 ```
 
-### Langfuse 可观测性（可选，需 4GB+ 内存）
+### Langfuse 可观测性
+
+> 家里服务器 32GB 内存，Langfuse 随默认启动，无需额外参数。
 
 ```bash
-docker compose --profile langfuse up -d --build   # 启动全部服务 + Langfuse
-docker compose --profile langfuse down             # 停止包括 Langfuse
+docker compose up -d --build   # Langfuse 默认启动
+docker compose down             # 停止全部
 ```
 
 ---

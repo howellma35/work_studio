@@ -129,7 +129,7 @@ docker compose logs -f nginx
 docker compose logs --tail 100 ai-server
 ```
 
-### 调试
+### 调试 & 状态
 
 ```bash
 # 查看所有容器状态
@@ -139,9 +139,112 @@ docker compose ps
 docker compose exec ai-server bash
 docker compose exec vehicle-backend bash
 docker compose exec nginx sh
+docker compose exec redis redis-cli -a redis123
 
-# 启动 Langfuse 可观测性（可选，需 4GB+ 内存）
-docker compose --profile langfuse up -d --build
+# Langfuse 可观测性（默认随 docker compose up -d 启动）
+docker compose logs -f langfuse-app           # Langfuse 日志
+docker compose logs -f langfuse-worker        # Langfuse Worker 日志
+```
+
+### Docker 环境配置备份与还原
+
+> 国内服务器拉取镜像经常失败，配置好镜像源后记得备份，方便以后还原。
+
+```bash
+# ===== 备份 Docker 配置 =====
+
+# 备份 daemon.json（镜像源配置）
+cp /etc/docker/daemon.json ~/docker-daemon.json.bak
+
+# 备份 Docker 代理配置（如果有）
+cp /etc/systemd/system/docker.service.d/proxy.conf ~/docker-proxy.conf.bak 2>/dev/null || true
+
+# 备份 docker-compose 的 .env
+cp deploy/.env ~/deploy-env.bak
+
+# 备份 frp 配置
+cp /etc/frp/frpc.toml ~/frpc.toml.bak 2>/dev/null || true
+
+# 备份 ECS nginx 配置（在 ECS 上执行）
+cp /etc/nginx/conf.d/mahongwei.conf ~/ecs-nginx.conf.bak 2>/dev/null || true
+
+
+# ===== 还原 Docker 配置 =====
+
+# 还原 daemon.json（镜像源）
+cp ~/docker-daemon.json.bak /etc/docker/daemon.json
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 还原 Docker 代理（如果有）
+sudo mkdir -p /etc/systemd/system/docker.service.d
+cp ~/docker-proxy.conf.bak /etc/systemd/system/docker.service.d/proxy.conf 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 还原 .env
+cp ~/deploy-env.bak deploy/.env
+
+# 还原 frp 配置
+cp ~/frpc.toml.bak /etc/frp/frpc.toml 2>/dev/null || true
+sudo systemctl restart frpc
+
+
+# ===== 快速切换镜像源（镜像拉取失败时）=====
+
+# 方案 1：国内镜像源（不用代理）
+sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
+{
+    "registry-mirrors": [
+        "https://docker.1ms.run",
+        "https://docker.xuanyuan.me",
+        "https://docker.rainbond.cc"
+    ],
+    "log-driver": "json-file",
+    "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+EOF
+sudo systemctl restart docker
+
+# 方案 2：通过代理直连（代理能访问外网时）
+# 注意：代理会绕过国内镜像源，可能访问国内服务反而变慢
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo tee /etc/systemd/system/docker.service.d/proxy.conf > /dev/null << 'EOF'
+[Service]
+Environment="HTTP_PROXY=http://192.168.31.xxx:10809"
+Environment="HTTPS_PROXY=http://192.168.31.xxx:10809"
+Environment="NO_PROXY=localhost,127.0.0.1"
+EOF
+# 同时去掉 daemon.json 中的 registry-mirrors，避免冲突
+sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
+{
+    "log-driver": "json-file",
+    "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 方案 3：关掉代理，只用国内镜像源
+sudo rm -f /etc/systemd/system/docker.service.d/proxy.conf
+sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
+{
+    "registry-mirrors": [
+        "https://docker.1ms.run",
+        "https://docker.xuanyuan.me",
+        "https://docker.rainbond.cc"
+    ],
+    "log-driver": "json-file",
+    "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+
+# ===== 查看当前配置 =====
+cat /etc/docker/daemon.json
+ls -la /etc/systemd/system/docker.service.d/ 2>/dev/null
 ```
 
 ---

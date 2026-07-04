@@ -18,6 +18,21 @@ import OriginChoiceCard from "./components/OriginChoiceCard";
 import AgentToolCard from "./components/AgentToolCard";
 import "@copilotkit/react-ui/v2/styles.css";
 
+// ===== 每日对话次数管理 =====
+const VEHICLE_DAILY_LIMIT = 5;
+
+function getVehicleTodayKey() {
+  return `vehicle_chat_count_${new Date().toISOString().slice(0, 10)}`;
+}
+function getVehicleTodayCount(): number {
+  return parseInt(localStorage.getItem(getVehicleTodayKey()) || "0", 10);
+}
+function incrementVehicleCount(): number {
+  const count = getVehicleTodayCount() + 1;
+  localStorage.setItem(getVehicleTodayKey(), String(count));
+  return count;
+}
+
 // CopilotKit Runtime 模式：前端通过 runtimeUrl 连接 Runtime 服务器
 // Runtime 服务器（Express:4000）代理请求到 Python 后端（FastAPI:8001）
 // 不再使用 selfManagedAgents 直连模式
@@ -96,6 +111,27 @@ function AppLayout() {
   const [amapKey, setAmapKey] = useState("");
   const [amapSecret, setAmapSecret] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
+  const [dailyCount, setDailyCount] = useState(getVehicleTodayCount);
+
+  // 从后端获取真实计数（防止 localStorage 被清绕过）
+  useEffect(() => {
+    fetch("/api/vehicle/chat-count")
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.used === "number") {
+          setDailyCount(data.used);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 导航完成后自动计数（前端 + 后端都会计数）
+  const recordUsage = () => {
+    const newCount = incrementVehicleCount();
+    setDailyCount(newCount);
+  };
+
+  const isLimitReached = dailyCount >= VEHICLE_DAILY_LIMIT;
 
   // 从后端API获取高德地图Key
   useEffect(() => {
@@ -222,6 +258,7 @@ function AppLayout() {
             steps: args.steps || [],
           },
         }));
+        recordUsage();
         return `地图已更新导航路线: ${originName} → ${destName}`;
       }
 
@@ -329,6 +366,14 @@ function AppLayout() {
               <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
               在线
             </span>
+            {/* 每日限制计数器 */}
+            <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+              isLimitReached
+                ? "border-red-500/40 bg-red-500/10 text-red-300"
+                : "border-slate-600/40 bg-slate-800/60 text-slate-300"
+            }`}>
+              💬 {VEHICLE_DAILY_LIMIT - dailyCount}/{VEHICLE_DAILY_LIMIT}
+            </span>
             {/* 折叠/展开聊天按钮 */}
             <button
               className="flex items-center gap-1 rounded-lg border border-slate-700/40 bg-slate-800/60 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 hover:text-white transition-all"
@@ -355,12 +400,13 @@ function AppLayout() {
 
       {/* ====== 右侧：可折叠聊天面板 ====== */}
       {chatOpen && (
-        <div className="w-[380px] shrink-0 flex flex-col border-l border-slate-700/40 bg-slate-950/80 backdrop-blur transition-all duration-300">
+        <div className="w-[380px] shrink-0 flex flex-col border-l border-slate-700/40 bg-slate-950/80 backdrop-blur transition-all duration-300 relative">
           <CopilotChat
             AssistantMessage={FoldableAssistantMessage}
-            instructions={`你是 AutoMind 车机助手。你可以帮用户导航、播放音乐、控制车辆、查天气等。
+            instructions={`你是 AutoMind 车机助手。目前只支持导航功能，其他功能（音乐、车辆控制、天气、提醒）正在开发中。
 
 重要规则：
+- 当用户询问非导航功能时，礼貌地告知该功能正在开发中，建议用户先体验导航功能
 - 当用户没有明确指定起点时，必须先调用 select_origin 前端工具让用户选择起点
 - select_origin 的 options 参数设为 ["家", "公司", "火车站", "机场"]
 - 调用 plan_route 工具获得导航数据后，必须调用 update_map 前端工具来更新地图显示
@@ -369,11 +415,32 @@ function AppLayout() {
 - 回复要简洁，适合车载语音播报场景`}
             labels={{
               title: "AutoMind 助手",
-              initial: "你好，我是你的车载智能助手。有什么可以帮你的吗？",
-              placeholder: "输入指令，如：导航去公司...",
+              initial: "你好，我是你的车载智能助手。\n\n📢 **目前只支持导航功能**，其他功能（音乐、车辆控制、天气等）正在开发中。\n\n你可以试试说：\n- 导航到张江科技园\n- 带我去虹桥机场\n- 去最近的加油站\n- 导航回家",
+              placeholder: isLimitReached
+                ? "今日对话次数已用完，明天再来吧"
+                : "输入指令，如：导航到张江科技园...",
             }}
             className="h-full flex-1"
           />
+          {/* 每日限制遮罩 */}
+          {isLimitReached && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-sm z-10">
+              <div className="flex flex-col items-center gap-3 px-6 text-center">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-red-500/20 to-orange-500/20 flex items-center justify-center border border-red-500/30">
+                  <span className="text-2xl">📝</span>
+                </div>
+                <h3 className="text-base font-semibold text-white">今日对话次数已用完</h3>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  每位用户每天最多 <span className="text-red-400 font-semibold">{VEHICLE_DAILY_LIMIT}</span> 次对话
+                  <br />
+                  请明天再来吧 🙏
+                </p>
+                <div className="mt-2 text-xs text-slate-500">
+                  剩余 {VEHICLE_DAILY_LIMIT - dailyCount}/{VEHICLE_DAILY_LIMIT}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

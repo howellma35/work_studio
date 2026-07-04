@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, Bot, Database, ArrowRight } from 'lucide-react';
+import { BookOpen, Bot, Database, ArrowRight, Car, Sparkles } from 'lucide-react';
 
 const sections = [
   {
@@ -42,7 +42,62 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 四大板块 */}
+      {/* ★ 最新功能：AutoMind 智能车机助手 ★ */}
+      <section className="mb-10">
+        <Link
+          to="/vehicle/"
+          className="block rounded-2xl overflow-hidden border border-slate-700/40 group transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/10 hover:border-blue-500/40"
+          style={{
+            background: 'linear-gradient(135deg, #0c1222 0%, #1a1a3e 50%, #0f172a 100%)',
+          }}
+        >
+          <div className="p-6 sm:p-8 flex flex-col sm:flex-row items-start gap-6">
+            {/* 图标 */}
+            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-500/30 shrink-0">
+              <Car className="h-8 w-8 text-white" />
+            </div>
+
+            {/* 内容 */}
+            <div className="flex-1 min-w-0">
+              {/* NEW 徽章 */}
+              <div className="inline-flex items-center gap-1.5 mb-3">
+                <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm">
+                  <Sparkles className="h-3 w-3" />
+                  最新功能
+                </span>
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2 tracking-tight">
+                AutoMind 智能车机助手
+              </h2>
+              <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-4 max-w-xl">
+                基于 LangGraph 多 Agent 架构的车载智能助手。集成高德地图实时导航、多媒体控制、
+                车辆状态查询、天气提醒等功能，支持自然语言交互与 Human-in-the-Loop 决策。
+              </p>
+
+              {/* 功能标签 */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {['🧭 实时导航', '🎵 多媒体', '🚗 车控', '🌤 天气', '⏰ 提醒'].map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-3 py-1 rounded-full text-xs font-medium bg-white/10 text-slate-200 backdrop-blur-sm border border-white/10"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* CTA */}
+              <div className="flex items-center gap-2 text-sm text-blue-400 font-medium group-hover:text-cyan-300 transition-colors">
+                <span>立即体验</span>
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+          </div>
+        </Link>
+      </section>
+
+      {/* 常规板块 */}
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {sections.map(({ path, title, desc, icon: Icon, color }) => (
           <Link
