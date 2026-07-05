@@ -111,6 +111,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
   const AMapRef = useRef<any>(null); // 缓存 AMap 全局对象
   const markersRef = useRef<any[]>([]);
   const polylineRef = useRef<any>(null);
+  const drivingRef = useRef<any>(null); // AMap.Driving 路线规划实例
   const poiMarkersRef = useRef<any[]>([]);
   const initKeyRef = useRef(""); // 记录上次初始化用的key，防止重复初始化
 
@@ -152,7 +153,7 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
     AMapLoader.load({
       key: amapKey,
       version: "2.0",
-      plugins: ["AMap.Geocoder"],
+      plugins: ["AMap.Geocoder", "AMap.Driving"],
     }).then((AMap: any) => {
       if (!containerRef.current) return;
 
@@ -209,6 +210,10 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       polylineRef.current.setMap(null);
       polylineRef.current = null;
     }
+    if (drivingRef.current) {
+      drivingRef.current.clear();
+      drivingRef.current = null;
+    }
 
     // 起点标记（绿色）
     if (origin) {
@@ -242,12 +247,45 @@ export default function MapPanel({ mapState, amapKey, amapSecret }: MapPanelProp
       markersRef.current.push(destMarker);
     }
 
-    // 路线渲染 —— 直接用后端返回的 routeCoords 画 Polyline。
-    //
-    // 旧实现这里调用 AMap.Driving.search() 二次向高德服务器请求规划，
-    // 而后端 plan_route 已返回真实路径坐标，导致"重复规划 + 额外网络往返"，
-    // 是路线刷新很慢的主因。现改为本地直接画线，刷新即时完成。
-    if (routeCoords.length > 1) {
+    // 路线渲染 —— 用 AMap.Driving 渲染路线，自带路况颜色（红/黄/绿）
+    // 只需要起点终点坐标，不需要传坐标数组（省 token）
+    if (origin && destination) {
+      // 清除旧 Driving 实例
+      if (drivingRef.current) {
+        drivingRef.current.clear();
+      }
+      const driving = new AMap.Driving({
+        map: map,
+        policy: AMap.DrivingPolicy.LEAST_TIME,
+      });
+      driving.search(
+        toLngLat(origin, AMap),
+        toLngLat(destination, AMap),
+        (status: string, result: any) => {
+          if (status === "complete") {
+            drivingRef.current = driving;
+            console.log("Driving 路线渲染成功（含路况颜色）");
+          } else {
+            console.warn("Driving 渲染失败，回退手动画线", status);
+            // 回退：手动画单色线
+            if (routeCoords.length > 1) {
+              const polyline = new AMap.Polyline({
+                path: routeCoords.map((c) => toLngLat(c, AMap)),
+                strokeColor: "#3b82f6",
+                strokeWeight: 6,
+                strokeOpacity: 0.9,
+                lineJoin: "round",
+                lineCap: "round",
+                showDir: true,
+              });
+              polyline.setMap(map);
+              polylineRef.current = polyline;
+            }
+          }
+        }
+      );
+    } else if (routeCoords.length > 1) {
+      // 无起终点但有坐标数组时，手动画线
       const polyline = new AMap.Polyline({
         path: routeCoords.map((c) => toLngLat(c, AMap)),
         strokeColor: "#3b82f6",

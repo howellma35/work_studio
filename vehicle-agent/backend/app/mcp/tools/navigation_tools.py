@@ -111,20 +111,6 @@ def _amap_str_to_coord(s: str) -> tuple[float, float]:
     return (float(parts[1]), float(parts[0]))
 
 
-def _downsample_coords(coords: list[list[float]], max_points: int = 40) -> list[list[float]]:
-    """对路线坐标降采样，保留首尾点，等间隔抽样到 max_points 个。
-
-    高德 polyline 常返回上百个点，全量经 LLM 流式输出会显著拖慢响应。
-    降采样后折线视觉上仍平滑，但负载大幅减小。
-    """
-    n = len(coords)
-    if n <= max_points:
-        return coords
-    step = (n - 1) / (max_points - 1)
-    sampled = [coords[round(i * step)] for i in range(max_points)]
-    # 确保末点是真实终点
-    sampled[-1] = coords[-1]
-    return sampled
 
 
 @mcp.tool()
@@ -182,36 +168,15 @@ async def plan_route(origin: str, destination: str, avoid_traffic: bool = False,
     distance_km = round(distance_m / 1000, 1)
     duration_min = round(duration_s / 60)
 
-    # 提取路线步骤
+    # 提取路线步骤（坐标不再返回，前端 AMap.Driving 自行请求高德渲染路线+路况颜色）
     steps_list = []
-    route_coords = []
     for step in path.get("steps", []):
         instruction = step.get("instruction", "")
         road_name = step.get("road", "")
         step_distance = int(step.get("distance", 0))
-        step_duration = int(step.get("duration", 0))
 
         step_text = f"{instruction}" if instruction else f"沿{road_name}行驶{step_distance}米"
         steps_list.append(step_text)
-
-        # 提取路线坐标点（高德返回 polyline 格式: lng,lat;lng,lat;...）
-        polyline = step.get("polyline", "")
-        if polyline:
-            for point_str in polyline.split(";"):
-                if point_str:
-                    coord = _amap_str_to_coord(point_str)
-                    route_coords.append([coord[0], coord[1]])
-
-    # 如果没有坐标数据，用起终点构造
-    if not route_coords:
-        route_coords = [
-            [origin_coord[0], origin_coord[1]],
-            [dest_coord[0], dest_coord[1]],
-        ]
-
-    # 降采样路线坐标，减小经 LLM 流式输出的负载（加快地图刷新）
-    # 20 点已足够画平滑折线，token 消耗约为 40 点的一半
-    route_coords = _downsample_coords(route_coords, max_points=20)
 
     return {
         "status": "ok",
@@ -224,7 +189,6 @@ async def plan_route(origin: str, destination: str, avoid_traffic: bool = False,
             "avoid_traffic": avoid_traffic,
             "origin_coord": {"lat": origin_coord[0], "lng": origin_coord[1]},
             "destination_coord": {"lat": dest_coord[0], "lng": dest_coord[1]},
-            "route_coords": route_coords,
             "steps": steps_list,
         },
     }
