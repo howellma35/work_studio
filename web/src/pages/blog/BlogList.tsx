@@ -1,18 +1,10 @@
 import { Link } from 'react-router-dom';
 import { Calendar, Clock, Tag } from 'lucide-react';
-import blogs from '../../data/blogs.json';
-
-interface BlogMeta {
-  slug: string;
-  title: string;
-  summary: string;
-  tags: string[];
-  date: string;
-  readTime: string;
-}
+import posts from '../../data/blogs-loader';
 
 export default function BlogList() {
-  const posts = blogs as BlogMeta[];
+  // 已按日期降序排列（在 loader 中处理）
+  const sortedPosts = posts;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:py-14">
@@ -22,7 +14,7 @@ export default function BlogList() {
       </div>
 
       <div className="grid gap-4">
-        {posts.map((post) => (
+        {sortedPosts.map((post) => (
           <Link
             key={post.slug}
             to={`/blog/${post.slug}`}

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, Bot, Database, ArrowRight, Car, Sparkles } from 'lucide-react';
+import { BookOpen, Bot, Database, ArrowRight, Car, Sparkles, ExternalLink } from 'lucide-react';
+import { siteConfig } from '../config/site';
 
 const sections = [
   {
@@ -39,6 +40,15 @@ export default function HomePage() {
         <div className="mt-8 flex items-center justify-center gap-3">
           <Link to="/ai" className="btn-primary">体验 AI 对话</Link>
           <Link to="/blog" className="btn-secondary">浏览博客</Link>
+          <a
+            href={siteConfig.github_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary inline-flex items-center gap-2"
+          >
+            <ExternalLink size={16} />
+            GitHub
+          </a>
         </div>
       </section>
 

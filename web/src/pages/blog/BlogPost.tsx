@@ -2,21 +2,11 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Tag } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import blogs from '../../data/blogs.json';
-
-interface BlogData {
-  slug: string;
-  title: string;
-  summary: string;
-  tags: string[];
-  date: string;
-  readTime: string;
-  content: string;
-}
+import posts, { type BlogPost as BlogPostData } from '../../data/blogs-loader';
 
 export default function BlogPost() {
   const { slug } = useParams<{ slug: string }>();
-  const post = (blogs as BlogData[]).find((b) => b.slug === slug);
+  const post = posts.find((b) => b.slug === slug) as BlogPostData | undefined;
 
   if (!post) {
     return (
@@ -31,7 +21,7 @@ export default function BlogPost() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:py-14">
       <Link
         to="/blog"
         className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] mb-6 transition-colors"
@@ -67,15 +57,19 @@ export default function BlogPost() {
           </div>
         </header>
 
-        <div className="prose prose-sm sm:prose max-w-none
-          prose-headings:text-[var(--color-text)]
-          prose-p:text-[var(--color-text-secondary)]
-          prose-a:text-[var(--color-accent)]
-          prose-strong:text-[var(--color-text)]
-          prose-code:text-[var(--color-accent)] prose-code:bg-[var(--color-bg-muted)] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-          prose-pre:bg-[var(--color-bg-muted)] prose-pre:border prose-pre:border-[var(--color-border)] prose-pre:rounded-xl
-          prose-li:text-[var(--color-text-secondary)]
-        ">
+        <div
+          style={{ maxWidth: 'none' }}
+          className="prose-sm sm:prose
+            prose-headings:text-[var(--color-text)]
+            prose-p:text-[var(--color-text-secondary)]
+            prose-a:text-[var(--color-accent)]
+            prose-strong:text-[var(--color-text)]
+            prose-code:text-[var(--color-accent)] prose-code:bg-[var(--color-bg-muted)] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
+            prose-pre:bg-[var(--color-bg-muted)] prose-pre:border prose-pre:border-[var(--color-border)] prose-pre:rounded-xl
+            prose-table:text-[var(--color-text-secondary)]
+            prose-li:text-[var(--color-text-secondary)]
+          "
+        >
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {post.content}
           </ReactMarkdown>

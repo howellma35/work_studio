@@ -11,10 +11,10 @@ export const siteConfig = {
   organization_name: import.meta.env.VITE_ORG_NAME || 'Mahongwei Studio',
 
   /** ICP 备案编号 */
-  icp_number: import.meta.env.VITE_ICP_NUMBER || '京ICP备XXXXXXXX号-X',
+  icp_number: import.meta.env.VITE_ICP_NUMBER || '沪ICP备2026029396号',
 
   /** 联系邮箱 */
-  contact_email: import.meta.env.VITE_CONTACT_EMAIL || 'contact@mahongwei.com.cn',
+  contact_email: import.meta.env.VITE_CONTACT_EMAIL || 'mhwwangyi@163.com',
 
   /** 可选大模型列表（AI 前沿探索模块使用） */
   model_options: [
@@ -23,6 +23,9 @@ export const siteConfig = {
     { id: 'qwen-plus', name: '通义千问 Plus', provider: '百炼' },
     { id: 'qwen-max', name: '通义千问 Max', provider: '百炼' },
   ],
+
+  /** GitHub 仓库地址 */
+  github_url: import.meta.env.VITE_GITHUB_URL || 'https://github.com/howellma35/work_studio',
 
   /** AI 后端 API 基础地址（Docker 环境用相对路径，本地开发可设置环境变量） */
   aiServerUrl: import.meta.env.VITE_AI_SERVER_URL || '',

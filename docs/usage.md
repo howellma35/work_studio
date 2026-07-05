@@ -1,4 +1,4 @@
-# Mahongwei Studio - 使用说明
+# 2026-06-16 Mahongwei Studio - 使用说明
 
 ## 平台概览
 

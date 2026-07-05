@@ -5,7 +5,8 @@
 ```bash
 # 1. 后端
 cd vehicle-agent/backend
-python -m venv .venv && .venv\Scripts\Activate.ps1
+python -m venv .venv && 
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 cp .env.example .env  # 填入 API Key
 python -m uvicorn app.main:app --port 8001 --reload
