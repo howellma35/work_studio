@@ -77,8 +77,8 @@ services:
   # 主站前端（React SPA）
   web:
     build:
-      context: ../web
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: web/Dockerfile
     container_name: web
     restart: always
 
