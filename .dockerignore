@@ -1,0 +1,22 @@
+# 排除所有 node_modules 和虚拟环境
+**/node_modules
+**/.venv
+
+# 排除构建产物（会在 Docker 内重新构建）
+web/dist
+
+# 排除 AI 后端和车载后端（web 构建不需要）
+ai-server
+vehicle-agent/backend
+vehicle-agent/runtime
+
+# 排除部署和文档（不需要进构建上下文）
+deploy
+.git
+.qoder
+
+# 排除大文件
+*.png
+*.jpg
+*.jpeg
+*.gif

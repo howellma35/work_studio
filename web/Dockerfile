@@ -1,4 +1,6 @@
 # 构建上下文为项目根目录，web/ 下的文件通过 web/ 前缀访问
+FROM node:20-alpine AS builder
+
 WORKDIR /app
 
 # 复制 docs 和 vehicle-agent/docs（博客动态加载需要）
