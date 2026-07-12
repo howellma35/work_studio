@@ -1,8 +1,10 @@
 /**
  * 博客数据动态加载器
  *
- * 使用 Vite 的 import.meta.glob 自动扫描 docs 目录下的 .md 文件，
- * 构建时将所有文档打包为博客数据。
+ * 通过 Vite 插件 virtual:blog-docs（见 vite.config.ts 的 blogDocsPlugin）
+ * 在构建时读取 docs/ 和 vehicle-agent/docs/ 下的所有 .md 文件。
+ * 用 fs 读取而非 import.meta.glob，是为了同时兼容本地开发与 Docker 构建
+ * 两种不同的目录层级（详见 vite.config.ts 注释）。
  *
  * 新增博客：只需在 docs/ 或 vehicle-agent/docs/ 目录下放一个 .md 文件即可。
  * - 标题：取第一个 # 标题
@@ -11,9 +13,7 @@
  * - 正文：完整 Markdown 内容
  */
 
-// 自动加载两个 docs 目录下所有 .md 文件（?raw 获取原始文本）
-const docFiles = import.meta.glob('../../docs/*.md', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
-const vehicleFiles = import.meta.glob('../../../vehicle-agent/docs/*.md', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+import rawDocs from 'virtual:blog-docs';
 
 // ===== 元数据提取 =====
 
@@ -77,15 +77,12 @@ interface BlogPost {
   content: string;
 }
 
-const allFiles = { ...docFiles, ...vehicleFiles };
-
-const posts: BlogPost[] = Object.entries(allFiles).map(([filepath, raw]) => {
-  const filename = filepath.split('/').pop() || '';
-  const slug = makeSlug(filepath);
+const posts: BlogPost[] = rawDocs.map(({ name, content: raw }) => {
+  const slug = makeSlug(name);
 
   // 标题 + 日期
-  const title = extractTitle(raw, filename.replace(/\.md$/, '').replace(/^\d{4}-\d{2}-\d{2}-/, ''));
-  const date = extractDate(filename);
+  const title = extractTitle(raw, name.replace(/\.md$/, '').replace(/^\d{4}-\d{2}-\d{2}-/, ''));
+  const date = extractDate(name);
 
   // 去掉标题行和紧跟的描述行（> 开头的），正文从实际内容开始
   const body = raw.replace(/^#\s+.+\n+/m, '').replace(/^>\s+.+\n+/gm, '');
