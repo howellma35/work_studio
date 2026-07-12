@@ -13,6 +13,9 @@ export const siteConfig = {
   /** ICP 备案编号 */
   icp_number: import.meta.env.VITE_ICP_NUMBER || '沪ICP备2026029396号',
 
+  /** 公安备案编号 */
+  police_record_number: import.meta.env.VITE_POLICE_RECORD_NUMBER || '沪公网安备31011402022120号',
+
   /** 联系邮箱 */
   contact_email: import.meta.env.VITE_CONTACT_EMAIL || 'mhwwangyi@163.com',
 

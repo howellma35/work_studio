@@ -30,14 +30,30 @@ export default function Footer() {
 
         <div className="mt-8 pt-4 border-t border-[var(--color-border)] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[var(--color-text-muted)]">
           <p>&copy; {new Date().getFullYear()} {siteConfig.organization_name}. All rights reserved.</p>
-          <a
-            href="https://beian.miit.gov.cn/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--color-accent)] transition-colors"
-          >
-            {siteConfig.icp_number}
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--color-accent)] transition-colors"
+            >
+              {siteConfig.icp_number}
+            </a>
+            <span className="text-[var(--color-border)]">|</span>
+            <a
+              href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31011402022120"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--color-accent)] transition-colors inline-flex items-center gap-1"
+            >
+              <img
+                src="/police.png"
+                alt="公安备案"
+                className="w-4 h-4 inline-block"
+              />
+              {siteConfig.police_record_number}
+            </a>
+          </div>
         </div>
       </div>
     </footer>
