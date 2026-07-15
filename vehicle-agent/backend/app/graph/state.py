@@ -20,6 +20,10 @@ class AutoMindState(CopilotKitState):
     - pending_reminders: 待处理提醒
     - current_vehicle_status: 当前车辆状态快照
     - active_agent: 当前激活的子Agent
+    - session_id: 当前会话标识（用于跨会话记忆）
+    - knowledge_results: 知识库检索结果（含来源标注）
+    - shared_memory: 跨会话共享记忆摘要
+    - kb_search_triggered: 是否触发了知识库检索
 
     注意：不要在此声明 remaining_steps。create_agent 会在内部自行管理该
     托管通道（managed channel），若在 state_schema 里显式声明，会被
@@ -33,3 +37,8 @@ class AutoMindState(CopilotKitState):
     pending_reminders: list[dict] = []
     current_vehicle_status: dict = {}
     active_agent: str = ""
+    # --- 知识库与跨会话记忆新增字段 ---
+    session_id: str = ""
+    knowledge_results: list[dict] = []
+    shared_memory: list[str] = []
+    kb_search_triggered: bool = False

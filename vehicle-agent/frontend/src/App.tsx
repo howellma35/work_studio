@@ -16,6 +16,9 @@ import MapPanel, {
 import VehicleDashboard from "./components/VehicleDashboard";
 import OriginChoiceCard from "./components/OriginChoiceCard";
 import AgentToolCard from "./components/AgentToolCard";
+import CitationBadge, { parseCitations } from "./components/CitationBadge";
+import SessionPanel from "./components/SessionPanel";
+import KnowledgeImport from "./components/KnowledgeImport";
 import "@copilotkit/react-ui/v2/styles.css";
 
 // ===== 每日对话次数管理 =====
@@ -63,6 +66,58 @@ function FoldableAssistantMessage(props: any) {
   const rawContent: string = props.message?.content || "";
   const hasToolCalls = !!props.message?.generativeUI;
   const isGenerating = !!props.isGenerating;
+
+  // ===== 知识库来源标注解析 =====
+  // 检测 [来源: xxx | 相关度: 0.xx] 格式的标注，渲染为 CitationBadge
+  const citations = parseCitations(rawContent);
+
+  // 如果当前消息仍在生成中且有工具调用，隐藏文字内容
+  if (hasToolCalls && isGenerating && rawContent) {
+    return (
+      <div className="copilotKitMessage copilotKitAssistantMessage">
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <span>正在查询路况，请稍候...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 检测以 ROUTE_DATA: 或 POI_DATA: 开头的行
+  const hasRouteData = /^(ROUTE_DATA|POI_DATA):/m.test(rawContent);
+
+  // 处理知识库来源标注：将 [来源: xxx | 相关度: 0.xx] 替换为 CitationBadge
+  let processedContent = rawContent;
+  if (citations.length > 0) {
+    // 将标注文本替换为 React 无法渲染的占位符（后续在渲染时处理）
+    // 这里我们简单地将标注替换为带 emoji 的简短文本
+    for (const c of citations) {
+      processedContent = processedContent.replace(
+        c.fullMatch,
+        `📚(${c.source})`
+      );
+    }
+  }
+
+  if (!hasRouteData && citations.length === 0) {
+    return <DefaultAssistantMessage {...props} />;
+  }
+
+  if (hasRouteData) {
+    // 把数据行替换为 <details> 折叠框（保留原有的 ROUTE_DATA 处理）
+    processedContent = processedContent.replace(
+      /^(ROUTE_DATA|POI_DATA):.*$/gm,
+      (line) => {
+        const prefix = line.startsWith("ROUTE_DATA") ? "ROUTE_DATA" : "POI_DATA";
+        const label = prefix === "ROUTE_DATA" ? "路线数据" : "POI数据";
+        const escaped = line
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<details class="route-data-fold"><summary>📊 ${label}（点击展开）</summary><pre>${escaped}</pre></details>`;
+      },
+    );
+  }
 
   // 如果当前消息仍在生成中且有工具调用（如 update_map 正在传输数据），
   // 隐藏文字内容，显示加载提示
@@ -112,6 +167,10 @@ function AppLayout() {
   const [amapSecret, setAmapSecret] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [dailyCount, setDailyCount] = useState(getVehicleTodayCount);
+  const [sessions, setSessions] = useState<Array<{session_id: string; thread_id: string; created_at: string}>>([]);
+  const [currentSessionId, setCurrentSessionId] = useState("default");
+  const [showKnowledgeImport, setShowKnowledgeImport] = useState(false);
+  const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
 
   // 从后端获取真实计数（防止 localStorage 被清绕过）
   useEffect(() => {
@@ -132,6 +191,24 @@ function AppLayout() {
   };
 
   const isLimitReached = dailyCount >= VEHICLE_DAILY_LIMIT;
+
+  // ===== 会话管理 =====
+  const handleNewSession = async () => {
+    try {
+      const res = await fetch("/api/vehicle/sessions", { method: "POST" });
+      const data = await res.json();
+      if (data.session_id) {
+        setSessions([...sessions, data]);
+        setCurrentSessionId(data.session_id);
+      }
+    } catch (e) {
+      console.warn("创建会话失败", e);
+    }
+  };
+
+  const handleSwitchSession = (sessionId: string) => {
+    setCurrentSessionId(sessionId);
+  };
 
   // 从后端API获取高德地图Key
   useEffect(() => {
@@ -333,6 +410,7 @@ function AppLayout() {
         vehicle_agent: "车辆控制",
         weather_agent: "天气助手",
         reminder_agent: "提醒助手",
+        knowledge_agent: "知识库检索",
       };
       const title = labelMap[name] || name;
       return (
@@ -348,6 +426,16 @@ function AppLayout() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950">
+      {/* ====== 会话面板（可选） ====== */}
+      {sessionPanelOpen && (
+        <SessionPanel
+          currentSessionId={currentSessionId}
+          onNewSession={handleNewSession}
+          onSwitchSession={handleSwitchSession}
+          sessions={sessions}
+        />
+      )}
+
       {/* ====== 左侧：地图 + 仪表盘 ====== */}
       <div className={`flex-1 flex flex-col transition-all duration-300 ${chatOpen ? "" : "flex-1"}`}>
         {/* 顶部导航栏 */}
@@ -358,7 +446,7 @@ function AppLayout() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-white">AutoMind</h1>
-              <p className="text-[10px] text-slate-400">智能车机助手 · 高德地图 + LangGraph</p>
+              <p className="text-[10px] text-slate-400">智能车机助手 · 知识库 + 跨会话记忆</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -374,6 +462,22 @@ function AppLayout() {
             }`}>
               💬 {VEHICLE_DAILY_LIMIT - dailyCount}/{VEHICLE_DAILY_LIMIT}
             </span>
+            {/* 会话管理按钮 */}
+            <button
+              className="flex items-center gap-1 rounded-lg border border-slate-700/40 bg-slate-800/60 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 hover:text-white transition-all"
+              onClick={() => setSessionPanelOpen(!sessionPanelOpen)}
+              title="会话管理"
+            >
+              💬 {sessionPanelOpen ? "关闭会话" : "会话"}
+            </button>
+            {/* 知识库导入按钮 */}
+            <button
+              className="flex items-center gap-1 rounded-lg border border-slate-700/40 bg-slate-800/60 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 hover:text-white transition-all"
+              onClick={() => setShowKnowledgeImport(true)}
+              title="导入知识库"
+            >
+              📚 知识库
+            </button>
             {/* 折叠/展开聊天按钮 */}
             <button
               className="flex items-center gap-1 rounded-lg border border-slate-700/40 bg-slate-800/60 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 hover:text-white transition-all"
@@ -403,22 +507,28 @@ function AppLayout() {
         <div className="w-[380px] shrink-0 flex flex-col border-l border-slate-700/40 bg-slate-950/80 backdrop-blur transition-all duration-300 relative">
           <CopilotChat
             AssistantMessage={FoldableAssistantMessage}
-            instructions={`你是 AutoMind 车机助手。目前只支持导航功能，其他功能（音乐、车辆控制、天气、提醒）正在开发中。
+            instructions={`你是 AutoMind 车机助手，现在支持知识库检索和跨会话记忆功能。
+
+功能范围：
+- 导航：路径规划、POI搜索、路况查询
+- 多媒体：播放音乐、调音量
+- 车辆控制：车窗、空调、门锁
+- 天气：查天气、查预报
+- 提醒：创建提醒、保存偏好
+- 知识库：检索车辆手册、保养记录、个人档案等知识性内容
 
 重要规则：
-- 当用户询问非导航功能时，礼貌地告知该功能正在开发中，建议用户先体验导航功能
+- 当用户问知识性问题（保养、胎压、保险、里程等），会自动检索知识库并标注来源
 - 当用户没有明确指定起点时，必须先调用 select_origin 前端工具让用户选择起点
-- select_origin 的 options 参数设为 ["家", "公司", "火车站", "机场"]
-- 调用 plan_route 工具获得导航数据后，必须调用 update_map 前端工具来更新地图显示
-- 调用 search_poi 工具获得 POI 数据后，必须调用 update_map(action="search_poi") 来在地图上标记兴趣点
-- update_map 的 route_coords 格式为 [[lat, lng], ...], pois 格式为 [{"name":"xx","lat":31.23,"lng":121.47}, ...]
-- 回复要简洁，适合车载语音播报场景`}
+- 导航完成后必须调用 update_map 前端工具来更新地图显示
+- 回复要简洁，适合车载语音播报场景
+- 使用知识库信息时附带来源标注`}
             labels={{
               title: "AutoMind 助手",
-              initial: "你好，我是你的车载智能助手。\n\n📢 **目前只支持导航功能**，其他功能（音乐、车辆控制、天气等）正在开发中。\n\n你可以试试说：\n- 导航到张江科技园\n- 带我去虹桥机场\n- 去最近的加油站\n- 导航回家",
+              initial: "你好，我是你的车载智能助手。\n\n🆕 **新增功能**：知识库检索和跨会话记忆！\n\n你可以试试说：\n- 🧭 导航到张江科技园\n- 📚 胎压多少算正常\n- 📚 我的保养记录\n- 📚 保险什么时候到期\n- 🎵 放点音乐\n- 🌤 今天天气怎么样\n\n跨会话记忆已开启——不同会话间的偏好会自动共享。",
               placeholder: isLimitReached
                 ? "今日对话次数已用完，明天再来吧"
-                : "输入指令，如：导航到张江科技园...",
+                : "输入指令，如：胎压标准、导航到公司...",
             }}
             className="h-full flex-1"
           />
@@ -445,6 +555,11 @@ function AppLayout() {
       )}
 
     </div>
+
+    {/* ====== 知识库导入弹窗 ====== */}
+    {showKnowledgeImport && (
+      <KnowledgeImport onClose={() => setShowKnowledgeImport(false)} />
+    )}
   );
 }
 

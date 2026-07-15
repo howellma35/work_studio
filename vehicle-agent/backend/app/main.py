@@ -98,7 +98,7 @@ def setup_logging() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化可观测性与 Agent 图"""
+    """应用生命周期：启动时初始化可观测性、RAGFlow 与 Agent 图"""
     setup_logging()
     setup_observability()
     logger.info("=" * 60)
@@ -106,7 +106,36 @@ async def lifespan(app: FastAPI):
     logger.info(f"LLM 模型: {settings.LLM_MODEL} @ {settings.LLM_API_BASE}")
     logger.info(f"MCP 传输: {settings.MCP_TRANSPORT}")
     logger.info(f"LangFuse: {'已启用' if settings.langfuse_enabled else '未配置'}")
+    logger.info(f"RAGFlow: {'已配置' if settings.ragflow_enabled else '未配置'}")
     logger.info("=" * 60)
+
+    # ===== 初始化 RAGFlow 知识库与记忆 =====
+    ragflow_ok = False
+    if settings.ragflow_enabled:
+        try:
+            from app.ragflow.client import ragflow_client
+            from app.ragflow.knowledge_service import knowledge_service
+            from app.ragflow.memory_service import memory_service
+
+            ragflow_ok = ragflow_client.init()
+            if ragflow_ok:
+                knowledge_service.init()
+                memory_service.init()
+                logger.info("RAGFlow 知识库与记忆模块初始化成功")
+
+                # 初始化模拟知识数据（仅首次）
+                try:
+                    from app.ragflow.init_datasets import init_mock_knowledge
+                    await init_mock_knowledge()
+                except Exception as e:
+                    logger.warning(f"模拟知识数据初始化失败（不影响运行）: {e}")
+            else:
+                logger.warning("RAGFlow 连接失败，降级为本地模式")
+        except Exception as e:
+            logger.warning(f"RAGFlow 模块加载失败: {e}")
+
+    # 通知 MemoryManager RAGFlow 可用状态
+    memory_manager.set_ragflow_available(ragflow_ok)
 
     # 预构建 Supervisor 图（会加载 MCP 工具）
     logger.info("正在构建 LangGraph Supervisor 图...")
@@ -175,6 +204,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ===== 注册知识库和会话管理路由 =====
+from app.routers.session import router as session_router
+from app.routers.knowledge import router as knowledge_router
+
+app.include_router(session_router)
+app.include_router(knowledge_router)
 
 
 # ===== 每日对话限制中间件 =====

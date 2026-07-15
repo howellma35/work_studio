@@ -54,6 +54,18 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_DIR: Path = Path("logs")
 
+    # ===== RAGFlow 知识库与记忆配置 =====
+    RAGFLOW_ENABLED: bool = True
+    RAGFLOW_API_KEY: str = ""  # 从 RAGFlow Web UI (localhost:9380) 创建
+    RAGFLOW_BASE_URL: str = "http://localhost:9380"
+    RAGFLOW_SIMILARITY_THRESHOLD: float = 0.2
+    RAGFLOW_VECTOR_SIMILARITY_WEIGHT: float = 0.6
+    RAGFLOW_TOP_K: int = 5
+    RAGFLOW_KB_KEYWORDS: str = "保养,胎压,机油,如何,怎么,说明书,故障,维护,里程,油耗,保险,手册,充电,轮胎,空调,保险,驾照"
+    RAGFLOW_LLM_ID: str = ""  # RAGFlow tenant 内配置的 LLM model ID
+    RAGFLOW_EMBD_ID: str = ""  # RAGFlow tenant 内配置的 Embedding model ID
+    RAGFLOW_MEMORY_TYPES: str = "semantic,episodic,procedural"  # 记忆类型
+
     # ===== Demo 默认值 =====
     DEFAULT_VEHICLE_TEMP: int = 22
     DEFAULT_VEHICLE_USER_ID: str = "demo_user_001"
@@ -73,6 +85,16 @@ class Settings(BaseSettings):
     def langfuse_enabled(self) -> bool:
         """LangFuse 是否已配置"""
         return bool(self.LANGFUSE_PUBLIC_KEY and self.LANGFUSE_SECRET_KEY)
+
+    @property
+    def ragflow_enabled(self) -> bool:
+        """RAGFlow 是否可用（需 API Key）"""
+        return self.RAGFLOW_ENABLED and bool(self.RAGFLOW_API_KEY)
+
+    @property
+    def ragflow_memory_types_list(self) -> list[str]:
+        """RAGFLOW_MEMORY_TYPES 拆分为列表"""
+        return [t.strip() for t in self.RAGFLOW_MEMORY_TYPES.split(",") if t.strip()]
 
 
 settings = Settings()

@@ -1,6 +1,6 @@
 """
 统一记忆管理器
-合并短期对话记忆与长期用户偏好记忆，对外提供简洁接口
+合并短期对话记忆、长期用户偏好记忆与 RAGFlow 跨会话记忆，对外提供简洁接口
 """
 from loguru import logger
 
@@ -14,10 +14,15 @@ class MemoryManager:
     def __init__(self) -> None:
         self.checkpointer = short_term_memory
         self.long_term = long_term_memory
+        self._ragflow_available = False
+
+    def set_ragflow_available(self, available: bool) -> None:
+        """标记 RAGFlow 是否可用（由 main.py lifespan 设置）"""
+        self._ragflow_available = available
 
     def get_context(self, user_id: str, query: str) -> dict:
         """
-        获取当前对话的完整记忆上下文
+        获取当前对话的完整记忆上下文（本地记忆）
 
         合并以下信息注入到 Agent state:
         1. 用户长期偏好（向量召回）
@@ -44,6 +49,40 @@ class MemoryManager:
             f"记忆上下文加载 | user={user_id} | "
             f"偏好={len(preferences)} 档案keys={len(profile)} 提醒={len(reminders)}"
         )
+        return context
+
+    def get_combined_context(self, user_id: str, query: str, session_id: str = "") -> dict:
+        """
+        获取合并记忆上下文（本地 + RAGFlow 跨会话记忆）
+
+        在 RAGFlow 不可用时降级为 get_context()
+
+        Args:
+            user_id: 用户标识
+            query: 当前用户输入
+            session_id: 当前会话 ID（用于 RAGFlow 记忆关联）
+
+        Returns:
+            包含 preferences / profile / reminders / shared_memory 的上下文字典
+        """
+        # 先获取本地记忆
+        context = self.get_context(user_id, query)
+
+        # 如果 RAGFlow 可用，叠加跨会话记忆
+        if self._ragflow_available:
+            try:
+                from app.ragflow.memory_service import memory_service
+
+                if memory_service.available:
+                    shared_memory = memory_service.recall(query, top_n=3)
+                    context["shared_memory"] = shared_memory
+                    logger.debug(
+                        f"合并记忆上下文 | user={user_id} | "
+                        f"跨会话记忆={len(shared_memory)}"
+                    )
+            except Exception as e:
+                logger.warning(f"RAGFlow 记忆合并失败，降级为本地模式: {e}")
+
         return context
 
     def update_profile(self, user_id: str, updates: dict) -> None:

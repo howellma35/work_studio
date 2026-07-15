@@ -55,6 +55,7 @@ def build_subagent_tools(agents: dict[str, object]) -> list[BaseTool]:
     vehicle = agents["vehicle_agent"]
     weather = agents["weather_agent"]
     reminder = agents["reminder_agent"]
+    knowledge = agents["knowledge_agent"]
 
     @tool
     async def navigation_agent(task: str) -> str:
@@ -83,4 +84,12 @@ def build_subagent_tools(agents: dict[str, object]) -> list[BaseTool]:
         """智能提醒助手：创建提醒、查看待办、保存用户偏好。"""
         return await _invoke_subagent(reminder, task, "reminder_agent")
 
-    return [navigation_agent, media_agent, vehicle_agent, weather_agent, reminder_agent]
+    @tool
+    async def knowledge_agent(task: str) -> str:
+        """知识库助手：从知识库检索车辆手册、保养记录、个人档案等信息。
+        仅当用户问题涉及知识性内容时调用（如"胎压标准"、"保养记录"、"保险到期"）。
+        操作性问题（导航/音乐/空调控制）不需要检索知识库。
+        返回结果附带来源标注（[来源: 文档名 | 相关度: xx]）。"""
+        return await _invoke_subagent(knowledge, task, "knowledge_agent")
+
+    return [navigation_agent, media_agent, vehicle_agent, weather_agent, reminder_agent, knowledge_agent]

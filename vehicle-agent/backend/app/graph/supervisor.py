@@ -20,6 +20,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
 
+from app.agents.knowledge_agent import create_knowledge_agent
 from app.agents.media_agent import create_media_agent
 from app.agents.navigation_agent import create_navigation_agent
 from app.agents.reminder_agent import create_reminder_agent
@@ -55,10 +56,27 @@ SUPERVISOR_PROMPT = """\
 - 若是 POI 搜索，navigation_agent 返回 `POI_DATA: {{...}}`，调用 update_map(action="search_poi", pois=[...])
 - 最后只说一句话，例如："已为你规划从家到陆家嘴的路线，约 8 公里、25 分钟。"
 
+## 知识库检索判断（重要）
+- 当用户问题涉及**知识性内容**（如保养、胎压、手册、保险、里程、故障处理、个人档案等），调用 knowledge_agent
+- 当用户问题涉及**操作性内容**（如导航、播放音乐、开空调、锁车等），不需要检索知识库，直接调用对应子Agent
+- 如果不确定是否需要检索知识库，可以先调用 knowledge_agent 试一下
+
 ## 用户偏好上下文（来自记忆系统）
 用户档案: {user_profile}
 召回偏好: {recalled_preferences}
 待办提醒: {pending_reminders}
+
+## 知识库检索结果（如适用）
+{knowledge_context}
+
+## 跨会话共享记忆
+{shared_memory}
+
+## 知识引用规则
+1. 使用知识库信息时，在相关信息后附带"（来源：〈文档名〉）"
+2. 知识库与自身判断矛盾时，优先知识库权威信息，并说明差异
+3. 不需要在每次回复都提及知识库，只在确实使用了KB信息时标注来源
+4. 如果知识库未返回结果，正常用自己的知识回答
 
 ## 交互规范
 - 用简洁、自然的口语回复，适合驾驶场景（单次回复控制在 50 字以内）
@@ -71,28 +89,45 @@ SUPERVISOR_PROMPT = """\
 
 @dynamic_prompt
 def _build_prompt(request) -> str:
-    """动态构建 Supervisor 系统提示词，注入记忆上下文（dynamic_prompt 中间件）。
+    """动态构建 Supervisor 系统提示词，注入记忆上下文+知识库检索+跨会话记忆（dynamic_prompt 中间件）。
 
     create_agent 的 system_prompt 只接受 str/SystemMessage，不接受 callable；
     需要按对话动态生成提示词时，应使用 dynamic_prompt 中间件：
     它通过 wrap_model_call 在每次模型调用前把返回的字符串设为系统提示，
     对话历史由 create_agent 自动保留，无需在此手动拼接。
     """
+    from app.ragflow.knowledge_service import knowledge_service
+    from app.ragflow.memory_service import memory_service
+
     state = request.state
     user_id = state.get("user_id", settings.DEFAULT_VEHICLE_USER_ID)
+    session_id = state.get("session_id", "")
     messages = state.get("messages", [])
     user_message = ""
     if messages:
         last = messages[-1]
         user_message = last.content if hasattr(last, "content") else str(last)
 
+    # 1. 本地记忆（用户档案、偏好、提醒）
     context = memory_manager.get_context(user_id, user_message)
+
+    # 2. 知识库检索（基于关键词启发式自动判断）
+    knowledge_context = ""
+    if knowledge_service.should_search_kb(user_message):
+        knowledge_context = knowledge_service.search(user_message)
+
+    # 3. 跨会话共享记忆（RAGFlow Memory）
+    shared_memory = []
+    if memory_service.available and user_message:
+        shared_memory = memory_service.recall(user_message, top_n=3)
 
     return SUPERVISOR_PROMPT.format(
         routing_description=ROUTING_DESCRIPTION,
         user_profile=context.get("user_profile", {}),
         recalled_preferences=context.get("recalled_preferences", []),
         pending_reminders=context.get("pending_reminders", []),
+        knowledge_context=knowledge_context or "（当前无需知识库检索）",
+        shared_memory=shared_memory or ["（暂无跨会话记忆）"],
     )
 
 
@@ -131,6 +166,7 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
         "vehicle_agent": create_vehicle_agent(tools),
         "weather_agent": create_weather_agent(tools),
         "reminder_agent": create_reminder_agent(),
+        "knowledge_agent": create_knowledge_agent(),
     }
 
     # 3. 把子Agent 包成 supervisor 可调用的 @tool
@@ -153,7 +189,7 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
 
     logger.info(
         f"AutoMind Supervisor 图构建完成（A2） | "
-        f"子Agent={len(agents)} MCP工具={len(tools)} 模型={settings.LLM_MODEL}"
+        f"子Agent={len(agents)} MCP工具={len(tools)} 模型={settings.LLM_MODEL} 知识库=RAGFlow"
     )
     return graph
 

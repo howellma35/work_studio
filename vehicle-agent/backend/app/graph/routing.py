@@ -6,7 +6,7 @@ A2 架构下，supervisor 是单一 ReAct Agent，通过调用子Agent @tool 完
 """
 
 # Agent 名称（供参考）
-AGENT_NAMES = ["navigation_agent", "media_agent", "vehicle_agent", "weather_agent", "reminder_agent"]
+AGENT_NAMES = ["navigation_agent", "media_agent", "vehicle_agent", "weather_agent", "reminder_agent", "knowledge_agent"]
 
 # 路由描述，注入 Supervisor 提示词
 ROUTING_DESCRIPTION = """\
@@ -32,6 +32,11 @@ ROUTING_DESCRIPTION = """\
 5. **reminder_agent** - 智能提醒助手
    适用场景：创建提醒、看待办、保存偏好、上下文建议
    示例："提醒我下午3点开会"、"我有哪些待办"
+
+6. **knowledge_agent** - 知识库助手
+   适用场景：查询车辆知识、保养手册、法规说明、个人档案等需要检索文档的问题
+   注意：只有当用户问题涉及知识性内容时才调用，操作性问题（导航/音乐/空调控制）不需要检索知识库
+   示例："胎压多少算正常"、"我的保养记录"、"汽车保险什么时候到期"、"怎么查看里程数"
 
 路由规则：
 - 根据用户意图调用最合适的子 Agent 工具
