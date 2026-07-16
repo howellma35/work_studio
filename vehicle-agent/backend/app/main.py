@@ -244,6 +244,75 @@ async def daily_limit_middleware(request: Request, call_next):
 
 
 # ===== REST API 端点 =====
+@app.get("/api/vehicle/proactive")
+async def proactive_sse(request: Request):
+    """SSE 主动推荐推送端点
+
+    前端通过此端点接收实时主动推荐消息。
+    连接保持打开，每次评估命中规则时推送 JSON 消息。
+    """
+    from starlette.responses import StreamingResponse
+    from app.services.proactive_engine import proactive_engine
+
+    async def event_generator():
+        """SSE 事件生成器"""
+        queue = asyncio.Queue()
+
+        # 注册推送回调
+        async def callback(messages: list[dict]):
+            for msg in messages:
+                await queue.put(msg)
+
+        proactive_engine.subscribe(callback)
+
+        try:
+            while True:
+                # 等待推送消息或心跳
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    # 心跳包，保持连接
+                    yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.now().isoformat()})}\n\n"
+        except asyncio.CancelledError:
+            logger.info("[SSE] 主动推荐推送连接关闭")
+        finally:
+            # 清理订阅
+            if callback in proactive_engine._subscribers:
+                proactive_engine._subscribers.remove(callback)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/vehicle/proactive/trigger")
+async def proactive_trigger(request: Request):
+    """手动触发主动推荐评估（用于开发调试）
+
+    提交车况数据，引擎立即评估所有规则并返回命中结果。
+    """
+    from app.services.proactive_engine import proactive_engine
+
+    body = await request.json()
+    vehicle_status = body.get("vehicle_status", {})
+    weather = body.get("weather", {})
+    scene = body.get("scene", "idle")
+
+    proactive_engine.update_vehicle_status(vehicle_status)
+    proactive_engine.update_weather(weather)
+    proactive_engine.update_scene(scene)
+
+    messages = await proactive_engine.evaluate_and_push()
+    return {"triggered_rules": len(messages), "messages": messages}
+
+
 @app.get("/api/vehicle/health")
 async def health():
     """健康检查"""
@@ -275,6 +344,11 @@ async def chat_count(request: Request):
 @app.get("/api/vehicle/agent-info")
 async def agent_info():
     """获取 Agent 架构信息（用于前端展示）"""
+    from app.graph.scene_config import SCENE_CONFIGS, DrivingScene, get_scene_display
+
+    # 所有场景信息（前端可用）
+    all_scenes = {scene.value: get_scene_display(scene) for scene in DrivingScene}
+
     return {
         "agent_name": "AutoMind",
         "architecture": "supervisor(create_agent) + sub-agents as tools (A2)",
@@ -285,11 +359,14 @@ async def agent_info():
             {"name": "vehicle_agent", "desc": "车辆控制专家", "tools": ["control_window", "set_climate", "lock_doors", "set_seat", "get_vehicle_status"]},
             {"name": "weather_agent", "desc": "天气助手", "tools": ["get_weather", "get_forecast"]},
             {"name": "reminder_agent", "desc": "智能提醒助手", "tools": ["create_reminder", "list_reminders", "save_user_preference"]},
+            {"name": "knowledge_agent", "desc": "知识库助手", "tools": ["search_knowledge", "import_knowledge", "list_knowledge_bases"]},
         ],
+        "driving_scenes": all_scenes,
         "modules": {
             "memory": {"short_term": "AsyncSqliteSaver", "long_term": "ChromaDB + SQLite"},
             "mcp": "Model Context Protocol (FastMCP)",
             "observability": "LangFuse",
+            "scene_machine": "LangGraph StateGraph (5态驾驶场景)",
         },
         # 高德地图 Key（前端地图渲染需要）
         "amap_js_key": settings.AMAP_JS_KEY,

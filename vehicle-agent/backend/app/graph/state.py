@@ -24,6 +24,9 @@ class AutoMindState(CopilotKitState):
     - knowledge_results: 知识库检索结果（含来源标注）
     - shared_memory: 跨会话共享记忆摘要
     - kb_search_triggered: 是否触发了知识库检索
+    - current_scene: 当前驾驶场景（idle/city_driving/highway/parked/emergency）
+    - scene_config: 当前场景配置（从 scene_config.py 加载）
+    - scene_transition_reason: 场景切换原因
 
     注意：不要在此声明 remaining_steps。create_agent 会在内部自行管理该
     托管通道（managed channel），若在 state_schema 里显式声明，会被
@@ -42,3 +45,7 @@ class AutoMindState(CopilotKitState):
     knowledge_results: list[dict] = []
     shared_memory: list[str] = []
     kb_search_triggered: bool = False
+    # --- 驾驶场景状态机新增字段 ---
+    current_scene: str = "idle"        # DrivingScene 枚举值（str 形式）
+    scene_config: dict = {}            # 当前场景配置（序列化后的 SceneConfig）
+    scene_transition_reason: str = ""  # 场景切换原因描述

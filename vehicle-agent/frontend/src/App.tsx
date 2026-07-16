@@ -15,10 +15,12 @@ import MapPanel, {
 } from "./components/MapPanel";
 import VehicleDashboard from "./components/VehicleDashboard";
 import OriginChoiceCard from "./components/OriginChoiceCard";
+import SafetyConfirmCard from "./components/SafetyConfirmCard";
 import AgentToolCard from "./components/AgentToolCard";
 import CitationBadge, { parseCitations } from "./components/CitationBadge";
 import SessionPanel from "./components/SessionPanel";
 import KnowledgeImport from "./components/KnowledgeImport";
+import ProactiveNotification from "./components/ProactiveNotification";
 import "@copilotkit/react-ui/v2/styles.css";
 
 // ===== 每日对话次数管理 =====
@@ -267,6 +269,53 @@ function AppLayout() {
       return (
         <div className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-600/30 bg-slate-800/50 backdrop-blur-sm px-2.5 py-1 text-xs text-slate-300">
           ✓ 已选择起点{picked ? `：${picked}` : ""}
+        </div>
+      );
+    },
+  });
+
+  // ===== useHumanInTheLoop: confirm_dangerous_operation — 车辆安全操作二次确认 =====
+  //
+  // 当 supervisor 的安全护栏判断某个车辆操作风险等级为 HIGH 时，
+  // LLM 会调用 confirm_dangerous_operation 前端工具暂停执行，
+  // 弹出 SafetyConfirmCard 让用户确认是否执行。
+  // 用户点击确认/取消后 respond() 返回结果给 LLM 继续。
+  useHumanInTheLoop({
+    name: "confirm_dangerous_operation",
+    description: "车辆安全操作二次确认。当执行高风险车辆操作（如解锁车门）时，在聊天中展示安全确认卡片，让用户确认是否执行。",
+    parameters: z.object({
+      operation: z.string().describe("即将执行的操作描述"),
+      risk_level: z.enum(["medium", "high", "critical"]).describe("风险等级"),
+      safety_notice: z.string().describe("安全提示信息"),
+    }),
+    render: ({ args, status, respond }) => {
+      if (status === "inProgress") {
+        return (
+          <div className="my-1.5 flex items-center gap-2 rounded-xl border border-slate-600/30 bg-slate-800/50 backdrop-blur-sm p-2.5 text-xs text-slate-300">
+            <span className="animate-spin">⏳</span> 正在准备安全确认...
+          </div>
+        );
+      }
+
+      if (status === "executing" && respond) {
+        const operation = (args as any)?.operation || "未知操作";
+        const riskLevel = (args as any)?.risk_level || "high";
+        const safetyNotice = (args as any)?.safety_notice || "请注意安全";
+        return (
+          <SafetyConfirmCard
+            operation={operation}
+            riskLevel={riskLevel}
+            safetyNotice={safetyNotice}
+            onSelect={(approved: boolean) => respond(approved ? "approved" : "rejected")}
+          />
+        );
+      }
+
+      // complete — 保留一条紧凑的历史记录
+      const result = (args as any)?.__result;
+      return (
+        <div className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-600/30 bg-slate-800/50 backdrop-blur-sm px-2.5 py-1 text-xs text-slate-300">
+          {result === "approved" ? "✅ 已确认执行" : "❌ 已取消操作"}
         </div>
       );
     },
@@ -560,6 +609,9 @@ function AppLayout() {
     {showKnowledgeImport && (
       <KnowledgeImport onClose={() => setShowKnowledgeImport(false)} />
     )}
+
+    {/* ====== 主动推荐通知 ====== */}
+    <ProactiveNotification />
   );
 }
 

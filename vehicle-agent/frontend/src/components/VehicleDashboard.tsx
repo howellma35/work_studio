@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import SceneIndicator from "./SceneIndicator";
 
 interface AgentInfo {
   agent_name: string;
@@ -64,6 +65,9 @@ export default function VehicleDashboard() {
         <span className="text-xs text-slate-300">上海 26°C</span>
         <span className="text-[10px] text-slate-500">晴</span>
       </div>
+
+      {/* 驾驶场景指示器 */}
+      <SceneIndicator />
 
       {/* Agent 架构标签 */}
       {agentInfo && (

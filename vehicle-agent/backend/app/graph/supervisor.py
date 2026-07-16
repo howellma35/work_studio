@@ -3,9 +3,10 @@ AutoMind Supervisor Agent - 多Agent编排核心（方式 A2 / 官方 Sub-Agents
 
 架构：
 - Supervisor = `create_agent(..., middleware=[CopilotKitMiddleware()])`
-- 5 个专业子Agent 各自包成 @tool，由 supervisor 同步 invoke
+- 6 个专业子Agent 各自包成 @tool，由 supervisor 同步 invoke
 - 前端工具（select_origin / update_map）由 CopilotKitMiddleware 在 supervisor 层注入
 - HITL 暂停只发生在 supervisor 单一作用域 → 不再有跨作用域孤儿 tool_call
+- 驾驶场景状态机：每次调用前基于车况数据自动判断场景，动态注入场景配置
 
 这是整个系统的"大脑"，通过单一 ReAct Agent 协调所有子Agent 与前端工具。
 """
@@ -24,10 +25,13 @@ from app.agents.knowledge_agent import create_knowledge_agent
 from app.agents.media_agent import create_media_agent
 from app.agents.navigation_agent import create_navigation_agent
 from app.agents.reminder_agent import create_reminder_agent
+from app.agents.safety_guardrails import generate_safety_prompt
 from app.agents.vehicle_agent import create_vehicle_agent
 from app.agents.weather_agent import create_weather_agent
 from app.config import settings
 from app.graph.routing import ROUTING_DESCRIPTION
+from app.graph.scene_classifier import classify_scene
+from app.graph.scene_config import DrivingScene, get_scene_config, get_scene_display, get_scene_prompt
 from app.graph.state import AutoMindState
 from app.graph.subagent_tools import build_subagent_tools
 from app.memory.manager import memory_manager
@@ -38,6 +42,10 @@ SUPERVISOR_PROMPT = """\
 你是 AutoMind，一个智能车载助手。你的核心职责是理解车主需求，调用合适的专业子Agent工具完成任务，并用自然语音简短回复。
 
 {routing_description}
+
+{scene_context}
+
+{safety_rules}
 
 ## 你的工作流程
 1. 分析用户最新消息，识别意图
@@ -79,7 +87,7 @@ SUPERVISOR_PROMPT = """\
 4. 如果知识库未返回结果，正常用自己的知识回答
 
 ## 交互规范
-- 用简洁、自然的口语回复，适合驾驶场景（单次回复控制在 50 字以内）
+- 用简洁、自然的口语回复，适合驾驶场景（遵循当前场景的 max_response_words 限制）
 - 禁止复述数据：回复中绝对不要出现坐标数字、route_coords、lat/lng、JSON、ROUTE_DATA 等技术数据。这些只通过 update_map 工具参数传递，回复只说人话
 - 模糊意图礼貌反问；涉及车辆操作确认无误后执行
 - 中文回复，语气亲切专业
@@ -89,7 +97,11 @@ SUPERVISOR_PROMPT = """\
 
 @dynamic_prompt
 def _build_prompt(request) -> str:
-    """动态构建 Supervisor 系统提示词，注入记忆上下文+知识库检索+跨会话记忆（dynamic_prompt 中间件）。
+    """动态构建 Supervisor 系统提示词，注入：
+    1. 驾驶场景配置（基于车况数据自动分类）
+    2. 记忆上下文（用户档案、偏好、提醒）
+    3. 知识库检索（关键词启发式自动判断）
+    4. 跨会话记忆（RAGFlow Memory）
 
     create_agent 的 system_prompt 只接受 str/SystemMessage，不接受 callable；
     需要按对话动态生成提示词时，应使用 dynamic_prompt 中间件：
@@ -108,6 +120,48 @@ def _build_prompt(request) -> str:
         last = messages[-1]
         user_message = last.content if hasattr(last, "content") else str(last)
 
+    # ===== 0. 驾驶场景分类（基于车况数据） =====
+    vehicle_status = state.get("current_vehicle_status", {})
+    # 如果车况数据为空，构造默认静态数据（模拟停车状态）
+    if not vehicle_status:
+        vehicle_status = {
+            "speed": 0,
+            "gear": "P",
+            "alerts": [],
+            "battery": 78,
+            "engine_temp": 90,
+        }
+
+    scene_result = classify_scene(vehicle_status)
+    scene = scene_result["scene"]
+    scene_config = get_scene_config(scene)
+    scene_prompt = get_scene_prompt(scene)
+    scene_display = get_scene_display(scene)
+
+    # 更新 state 中的场景字段（供安全护栏等后续中间件使用）
+    state["current_scene"] = scene.value
+    state["scene_config"] = {
+        "max_response_words": scene_config.max_response_words,
+        "safety_level": scene_config.safety_level.value,
+        "blocked_tools": scene_config.blocked_tools,
+        "allowed_tools": scene_config.allowed_tools,
+        "response_style": scene_config.response_style,
+        "proactive_interval": scene_config.proactive_interval,
+    }
+    state["scene_transition_reason"] = scene_result["reason"]
+
+    logger.info(
+        f"[场景分类] scene={scene.value} confidence={scene_result['confidence']} "
+        f"reason={scene_result['reason']} safety={scene_config.safety_level.value}"
+    )
+
+    # 构建场景上下文（注入 supervisor prompt）
+    scene_context = scene_prompt
+
+    # ===== 0b. 安全护栏 prompt（基于场景 blocked_tools + RISK_MATRIX） =====
+    safety_rules = generate_safety_prompt(scene, scene_config.blocked_tools)
+    logger.info(f"[安全护栏] blocked_tools={scene_config.blocked_tools}, safety_prompt_len={len(safety_rules)}")
+
     # 1. 本地记忆（用户档案、偏好、提醒）
     context = memory_manager.get_context(user_id, user_message)
 
@@ -123,6 +177,8 @@ def _build_prompt(request) -> str:
 
     return SUPERVISOR_PROMPT.format(
         routing_description=ROUTING_DESCRIPTION,
+        scene_context=scene_context,
+        safety_rules=safety_rules,
         user_profile=context.get("user_profile", {}),
         recalled_preferences=context.get("recalled_preferences", []),
         pending_reminders=context.get("pending_reminders", []),
