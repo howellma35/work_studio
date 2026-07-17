@@ -5,14 +5,14 @@
 from loguru import logger
 
 from app.memory.long_term import long_term_memory
-from app.memory.short_term import short_term_memory
 
 
 class MemoryManager:
     """记忆系统统一入口"""
 
     def __init__(self) -> None:
-        self.checkpointer = short_term_memory
+        # 短期对话记忆（checkpointer）由 supervisor 直接持有 AsyncSqliteSaver，
+        # 不在此暴露；本入口仅负责长期记忆（偏好/档案/提醒）的召回与写入。
         self.long_term = long_term_memory
 
     def get_context(self, user_id: str, query: str) -> dict:

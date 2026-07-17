@@ -5,9 +5,6 @@ A2 架构下，supervisor 是单一 ReAct Agent，通过调用子Agent @tool 完
 提示词的 ROUTING_DESCRIPTION。
 """
 
-# Agent 名称（供参考）
-AGENT_NAMES = ["navigation_agent", "media_agent", "vehicle_agent", "weather_agent", "reminder_agent"]
-
 # 路由描述，注入 Supervisor 提示词
 ROUTING_DESCRIPTION = """\
 你可以调用以下专业子 Agent 工具（参数 task 为要交给该子Agent的完整任务描述）:

@@ -96,7 +96,7 @@ def _build_prompt(request) -> str:
     )
 
 
-async def build_supervisor_graph(frontend_tools: list | None = None) -> CompiledStateGraph:
+async def build_supervisor_graph() -> CompiledStateGraph:
     """
     构建 Supervisor 编排图（方式 A2 / 官方 Sub-Agents 模式）
 
@@ -111,9 +111,6 @@ async def build_supervisor_graph(frontend_tools: list | None = None) -> Compiled
     前端工具（select_origin / update_map）由 CopilotKitMiddleware 在 supervisor 层
     自动注入（读取 state["copilotkit"]["actions"]）。HITL 暂停只发生在 supervisor
     单一消息作用域，子 Agent 内部消息不冒泡，故不会产生孤儿 tool_call。
-
-    Args:
-        frontend_tools: 兼容旧签名（A2 下前端工具由 CopilotKitMiddleware 注入，此参数已无实际作用）
 
     Returns:
         编译后的 LangGraph 图，可直接传给 CopilotKit
@@ -182,15 +179,11 @@ async def close_checkpointer():
     await _checkpointer_stack.aclose()
 
 
-async def get_graph(frontend_tools: list | None = None) -> CompiledStateGraph:
-    """获取编译好的 Supervisor 图（单例，Double-Check Locking）
-
-    Args:
-        frontend_tools: 前端工具定义列表，初始化时传入（启动时通常为 None）
-    """
+async def get_graph() -> CompiledStateGraph:
+    """获取编译好的 Supervisor 图（单例，Double-Check Locking）"""
     global _graph_instance
     if _graph_instance is None:
         async with _graph_lock:
             if _graph_instance is None:
-                _graph_instance = await build_supervisor_graph(frontend_tools)
+                _graph_instance = await build_supervisor_graph()
     return _graph_instance
