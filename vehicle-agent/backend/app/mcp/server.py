@@ -2,6 +2,9 @@
 MCP Server (Model Context Protocol)
 统一的车载工具服务器，聚合导航/多媒体/车辆控制/天气工具
 
+所有工具注册到 app.mcp.tools 共享的单一 FastMCP 实例上（官方推荐写法），
+本模块只需导入各工具模块（触发 @mcp.tool() 注册）后调用 mcp.run()。
+
 支持两种运行模式:
 1. stdio: 作为子进程被 Agent 启动（开发推荐）
 2. sse: 独立 HTTP 服务（生产部署）
@@ -12,23 +15,14 @@ MCP Server (Model Context Protocol)
 """
 import sys
 
-from mcp.server.fastmcp import FastMCP
-
-from app.mcp.tools import navigation_tools, media_tools, vehicle_tools, weather_tools
-
-# 创建统一的 MCP Server
-mcp = FastMCP("AutoMindVehicleServer")
-
-# 将所有子服务器的工具注册到主服务器
-# 注意：FastMCP 工具已通过 @mcp.tool() 装饰器定义在各自模块中
-# 这里通过 import 触发工具注册，并合并工具集
-_all_tools = []
-
-for tool_module in [navigation_tools, media_tools, vehicle_tools, weather_tools]:
-    module_tools = tool_module.mcp._tool_manager._tools
-    for name, tool in module_tools.items():
-        mcp._tool_manager._tools[name] = tool
-        _all_tools.append(name)
+# 导入共享实例与各工具模块：导入即触发 @mcp.tool() 注册到同一实例
+from app.mcp.tools import mcp
+from app.mcp.tools import (  # noqa: F401  (导入用于副作用：注册工具)
+    media_tools,
+    navigation_tools,
+    vehicle_tools,
+    weather_tools,
+)
 
 
 def main() -> None:
@@ -38,6 +32,7 @@ def main() -> None:
     if use_sse:
         # SSE 模式：独立 HTTP 服务
         from app.config import settings
+
         mcp.run(transport="sse")
         print(f"MCP Server (SSE) 启动于 {settings.MCP_SERVER_URL}")
     else:

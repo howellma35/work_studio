@@ -46,13 +46,13 @@ SUPERVISOR_PROMPT = """\
 
 ## 导航专用流程（重要）
 - 若用户未明确起点（如"导航去公司"），**先调用 select_origin 前端工具**让用户选择起点
-  - options 设为 ["家","公司","火车站","机场"]，message 设为 "请选择您的出发地点："
-  - select_origin 会暂停等待用户选择，拿到结果后再继续
+  - select_origin 的默认起点选项已由前端工具 schema 定义，直接调用即可
+  - 调用后会暂停等待用户选择，拿到结果再继续
 - 拿到起点后，调用 navigation_agent("从〈起点〉导航到〈终点〉")
-- navigation_agent 返回里包含一行 `ROUTE_DATA: {{...}}`（JSON）。解析它，调用 update_map：
-  - action="navigate"，把 origin/destination/origin_lat/origin_lng/destination_lat/destination_lng/distance_km/duration_min/route_coords 传过去
+- navigation_agent 返回里包含一行 `ROUTE_DATA: {{...}}`（JSON）。解析它，调用 update_map(action="navigate")，
+  把其中的起点/终点/坐标/距离/时长等字段传给 update_map
   - **不要把逐条 steps 文本、坐标数字、route_coords、JSON 写进你的回复**，这些只传给 update_map，地图会展示路线
-- 若是 POI 搜索，navigation_agent 返回 `POI_DATA: {{...}}`，调用 update_map(action="search_poi", pois=[...])
+- 若是 POI 搜索，navigation_agent 返回 `POI_DATA: {{...}}`，调用 update_map(action="search_poi")，把 pois 传过去
 - 最后只说一句话，例如："已为你规划从家到陆家嘴的路线，约 8 公里、25 分钟。"
 
 ## 用户偏好上下文（来自记忆系统）

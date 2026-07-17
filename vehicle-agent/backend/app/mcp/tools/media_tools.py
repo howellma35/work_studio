@@ -2,9 +2,7 @@
 MCP 多媒体工具集
 模拟音乐播放器，提供播放控制能力
 """
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("MediaTools")
+from app.mcp.tools import mcp  # 共享 FastMCP 实例
 
 # 模拟播放器状态（内存中维护）
 _player_state = {

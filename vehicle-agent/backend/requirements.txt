@@ -15,6 +15,7 @@ langchain-community>=0.3.0
 
 # ===== CopilotKit Python SDK =====
 copilotkit>=0.1.39
+ag-ui-langgraph>=0.1.0
 
 # ===== MCP (Model Context Protocol) =====
 mcp>=1.21.0

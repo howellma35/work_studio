@@ -161,8 +161,14 @@ function AppLayout() {
     description:
       "让用户选择导航起点位置。在聊天中展示一个内联选择卡片，提供家、公司、火车站、机场等常见起点选项，也可输入自定义地点。",
     parameters: z.object({
-      options: z.array(z.string()).describe("可选起点列表"),
-      message: z.string().describe("询问起点时展示给用户的提示文本"),
+      options: z
+        .array(z.string())
+        .describe("可选起点列表")
+        .default(["家", "公司", "火车站", "机场"]),
+      message: z
+        .string()
+        .describe("询问起点时展示给用户的提示文本")
+        .default("请选择您的出发地点："),
     }),
     render: ({ args, status, respond }) => {
       if (status === "inProgress") {
@@ -405,13 +411,7 @@ function AppLayout() {
             AssistantMessage={FoldableAssistantMessage}
             instructions={`你是 AutoMind 车机助手。目前只支持导航功能，其他功能（音乐、车辆控制、天气、提醒）正在开发中。
 
-重要规则：
-- 当用户询问非导航功能时，礼貌地告知该功能正在开发中，建议用户先体验导航功能
-- 当用户没有明确指定起点时，必须先调用 select_origin 前端工具让用户选择起点
-- select_origin 的 options 参数设为 ["家", "公司", "火车站", "机场"]
-- 调用 plan_route 工具获得导航数据后，必须调用 update_map 前端工具来更新地图显示
-- 调用 search_poi 工具获得 POI 数据后，必须调用 update_map(action="search_poi") 来在地图上标记兴趣点
-- update_map 的 route_coords 格式为 [[lat, lng], ...], pois 格式为 [{"name":"xx","lat":31.23,"lng":121.47}, ...]
+- 当用户询问非导航功能时，礼貌地告知该功能正在开发中，建议先体验导航功能
 - 回复要简洁，适合车载语音播报场景`}
             labels={{
               title: "AutoMind 助手",

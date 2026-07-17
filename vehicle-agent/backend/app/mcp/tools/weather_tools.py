@@ -2,9 +2,7 @@
 MCP 天气工具集
 模拟天气查询 API
 """
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("WeatherTools")
+from app.mcp.tools import mcp  # 共享 FastMCP 实例
 
 # 模拟天气数据库
 _weather_db = {

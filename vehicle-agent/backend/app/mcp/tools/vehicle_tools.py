@@ -2,11 +2,8 @@
 MCP 车辆控制工具集
 模拟车机接口，提供车窗、空调、门锁、座椅控制能力
 """
-from mcp.server.fastmcp import FastMCP
-
 from app.config import settings
-
-mcp = FastMCP("VehicleTools")
+from app.mcp.tools import mcp  # 共享 FastMCP 实例
 
 # 模拟车辆状态
 _vehicle_state = {

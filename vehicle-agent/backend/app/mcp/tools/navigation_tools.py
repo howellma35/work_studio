@@ -4,12 +4,9 @@ MCP 导航工具集
 """
 import httpx
 from loguru import logger
-from mcp.server.fastmcp import FastMCP
 
 from app.config import settings
-
-# 导航工具子服务器
-mcp = FastMCP("NavigationTools")
+from app.mcp.tools import mcp  # 共享 FastMCP 实例
 
 # ====== 预设地名 → 坐标映射（用于常见地点快速匹配） ======
 _PRESET_LOCATIONS: dict[str, tuple[float, float]] = {
